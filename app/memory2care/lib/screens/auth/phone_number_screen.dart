@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:memory2care/controllers/app_controller.dart';
 import 'package:memory2care/screens/auth/verify_number_screen.dart';
 import 'package:memory2care/screens/main/main_shell.dart';
+import 'package:memory2care/utils/snackbar.dart';
 import 'package:memory2care/utils/validators.dart';
 import 'package:memory2care/widgets/form_text_field.dart';
 
@@ -17,6 +18,7 @@ class PhoneNumberScreen extends StatefulWidget {
 class _PhoneNumberScreenState extends State<PhoneNumberScreen> {
   final _formKey = GlobalKey<FormState>();
   final _phoneCtrl = TextEditingController();
+  bool _loadingLater = false;
 
   @override
   void dispose() {
@@ -37,6 +39,34 @@ class _PhoneNumberScreenState extends State<PhoneNumberScreen> {
               phoneNumber: _phoneCtrl.text.trim(),
             ),
       ),
+    );
+  }
+
+  Future<void> _continueLater() async {
+    setState(() => _loadingLater = true);
+
+    final phone = _phoneCtrl.text.trim();
+    final result = await widget.controller.completeRegistration(
+      phone: phone.isEmpty ? 'Not provided' : phone,
+      otpCode: '0000',
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() => _loadingLater = false);
+
+    if (!result.success) {
+      showSnack(context, result.message ?? 'Could not complete registration');
+      return;
+    }
+
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) => MainShell(controller: widget.controller),
+      ),
+      (_) => false,
     );
   }
 
@@ -86,20 +116,17 @@ class _PhoneNumberScreenState extends State<PhoneNumberScreen> {
                 ),
                 const SizedBox(height: 10),
                 ElevatedButton(
-                  onPressed: () {
-                    Navigator.of(context).pushAndRemoveUntil(
-                      MaterialPageRoute(
-                        builder:
-                            (_) => MainShell(controller: widget.controller),
-                      ),
-                      (_) => false,
-                    );
-                  },
+                  onPressed: _loadingLater ? null : _continueLater,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFFE3E5EA),
                     foregroundColor: const Color(0xFF9FA4B1),
                   ),
-                  child: const Text('Later'),
+                  child:
+                      _loadingLater
+                          ? const CircularProgressIndicator(
+                            color: Color(0xFF9FA4B1),
+                          )
+                          : const Text('Later'),
                 ),
                 const Spacer(flex: 2),
               ],

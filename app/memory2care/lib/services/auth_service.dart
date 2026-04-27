@@ -50,7 +50,7 @@ class AuthService {
     }
 
     final local = await LocalStore.instance();
-    final account = local.readLocalAccount();
+    final account = local.readLocalAccountByEmail(email);
     if (account == null) {
       return AuthResult(
         success: false,
@@ -76,7 +76,7 @@ class AuthService {
     if (legacyMatches && !hashMatches) {
       final salt = generateSalt();
       final hash = hashPassword(password: password, salt: salt);
-      await local.saveLocalAccount(
+      await local.upsertLocalAccount(
         account.copyWith(
           passwordHash: hash,
           passwordSalt: salt,
@@ -84,6 +84,8 @@ class AuthService {
         ),
       );
     }
+
+    await local.setActiveAccountEmail(account.email);
 
     return AuthResult(
       success: true,
@@ -124,7 +126,7 @@ class AuthService {
     }
 
     final local = await LocalStore.instance();
-    if (local.readLocalAccount()?.email.toLowerCase() == email.toLowerCase()) {
+    if (local.readLocalAccountByEmail(email) != null) {
       return AuthResult(
         success: false,
         message: 'An account with this email already exists.',
@@ -202,7 +204,7 @@ class AuthService {
     );
 
     final local = await LocalStore.instance();
-    await local.saveLocalAccount(
+    await local.upsertLocalAccount(
       LocalAccount(
         email: _pending!.email,
         passwordHash: _pending!.passwordHash,
@@ -210,6 +212,7 @@ class AuthService {
         profile: user,
       ),
     );
+    await local.setActiveAccountEmail(user.email);
     _pending = null;
     return AuthResult(success: true, user: user, token: 'local-token');
   }

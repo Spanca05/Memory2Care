@@ -103,12 +103,6 @@ class ProfileScreen extends StatelessWidget {
                   );
                 },
               ),
-              const ProfileItem(
-                icon: Icons.shield_outlined,
-                title: 'Face ID / Touch ID',
-                subtitle: 'Manage your device security',
-                trailing: FakeToggle(),
-              ),
               ProfileItem(
                 icon: Icons.logout,
                 title: 'Log out',

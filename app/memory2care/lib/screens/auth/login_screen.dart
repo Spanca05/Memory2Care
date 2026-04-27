@@ -67,17 +67,6 @@ class _LoginScreenState extends State<LoginScreen> {
             key: _formKey,
             child: Column(
               children: [
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: IconButton(
-                    onPressed: () {},
-                    style: IconButton.styleFrom(backgroundColor: Colors.white),
-                    icon: const Icon(
-                      Icons.arrow_back_ios_new_rounded,
-                      size: 16,
-                    ),
-                  ),
-                ),
                 const Spacer(),
                 const Text(
                   'Login',
@@ -96,6 +85,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   icon: Icons.lock_outline,
                   hint: 'Password',
                   obscured: true,
+                  toggleObscureText: true,
                   validator: validatePassword,
                 ),
                 const SizedBox(height: 10),

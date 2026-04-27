@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:memory2care/controllers/app_controller.dart';
+import 'package:memory2care/models/medication.dart';
 import 'package:memory2care/models/medication_plan.dart';
 
 class MedicationSummaryCard extends StatelessWidget {
@@ -10,6 +11,29 @@ class MedicationSummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (plan.medications.isEmpty) {
+      return Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.08),
+              blurRadius: 14,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        padding: const EdgeInsets.all(16),
+        child: const Center(
+          child: Text(
+            'No medications added yet',
+            style: TextStyle(color: Colors.black45),
+          ),
+        ),
+      );
+    }
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -27,15 +51,49 @@ class MedicationSummaryCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            plan.medicationName,
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+            'Your Medications (${plan.medications.length})',
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
           ),
-          const SizedBox(height: 6),
-          Text('Dose: ${plan.dose}'),
-          Text('Times per week: ${plan.timesPerWeek}'),
-          Text(
-            'Start date: ${DateFormat('dd MMM yyyy').format(plan.startDate)}',
-          ),
+          const SizedBox(height: 12),
+          ...plan.medications.map((med) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    med.name,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Dose: ${med.dose}',
+                    style: const TextStyle(fontSize: 12, color: Colors.black54),
+                  ),
+                  Text(
+                    'Times: ${med.timesOfDay.map((t) => t.displayLabel).join(", ")}',
+                    style: const TextStyle(fontSize: 12, color: Colors.black54),
+                  ),
+                  Text(
+                    'Start: ${DateFormat('dd MMM yyyy').format(med.startDate)}${med.endDate != null ? " - ${DateFormat('dd MMM yyyy').format(med.endDate!)}" : ""}',
+                    style: const TextStyle(fontSize: 12, color: Colors.black54),
+                  ),
+                  if (!med.isActive)
+                    const Text(
+                      '(Inactive)',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.red,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                ],
+              ),
+            );
+          }),
         ],
       ),
     );
@@ -144,25 +202,49 @@ class CalendarCard extends StatelessWidget {
               }
 
               final due = controller.isDueDate(date);
-              final taken = controller.isTaken(date);
+              final dueMeds = controller.getDueMedicationsForDate(date);
+              final takenCount = controller.getTakenCountForDate(date);
               final today = DateUtils.isSameDay(date, DateTime.now());
 
               Color? background;
               Color textColor = Colors.black54;
-              if (taken) {
-                background = const Color(0xFF98E8A5);
-                textColor = Colors.white;
-              } else if (due) {
-                background = const Color(0xFFE8F3FF);
-                textColor = const Color(0xFF3B75C4);
+
+              if (due) {
+                if (takenCount == dueMeds.length) {
+                  // All medications taken
+                  background = const Color(0xFF98E8A5);
+                  textColor = Colors.white;
+                } else if (takenCount > 0) {
+                  // Some medications taken
+                  background = const Color(0xFFFFF9C4);
+                  textColor = Colors.black87;
+                } else {
+                  // Due but none taken
+                  background = const Color(0xFFE8F3FF);
+                  textColor = const Color(0xFF3B75C4);
+                }
               }
+
               if (today) {
                 background = const Color(0xFFFF5A3D);
                 textColor = Colors.white;
               }
 
               return GestureDetector(
-                onTap: due ? () => controller.toggleTaken(date) : null,
+                onTap:
+                    due
+                        ? () {
+                          showDialog(
+                            context: context,
+                            builder:
+                                (context) => MedicationDialog(
+                                  date: date,
+                                  dueMeds: dueMeds,
+                                  controller: controller,
+                                ),
+                          );
+                        }
+                        : null,
                 child: Center(
                   child: Container(
                     width: 34,
@@ -189,12 +271,55 @@ class CalendarCard extends StatelessWidget {
           const Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              'Tip: Tap light-blue days to mark medication as taken.',
+              'Tip: Tap colored days to mark medications as taken.',
               style: TextStyle(fontSize: 12, color: Colors.black45),
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class MedicationDialog extends StatelessWidget {
+  const MedicationDialog({
+    super.key,
+    required this.date,
+    required this.dueMeds,
+    required this.controller,
+  });
+
+  final DateTime date;
+  final List<Medication> dueMeds;
+  final AppController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(DateFormat('dd MMM yyyy').format(date)),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children:
+            dueMeds
+                .map(
+                  (med) => CheckboxListTile(
+                    title: Text(med.name),
+                    subtitle: Text(
+                      '${med.dose} - ${med.timesOfDay.map((t) => t.displayLabel).join(", ")}',
+                    ),
+                    value: controller.isMedicationTaken(med.id, date),
+                    onChanged:
+                        (_) => controller.toggleMedicationTaken(med.id, date),
+                  ),
+                )
+                .toList(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Done'),
+        ),
+      ],
     );
   }
 }

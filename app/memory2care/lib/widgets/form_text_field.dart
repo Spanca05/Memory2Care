@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-class FormTextField extends StatelessWidget {
+class FormTextField extends StatefulWidget {
   const FormTextField({
     super.key,
     required this.controller,
@@ -9,6 +9,7 @@ class FormTextField extends StatelessWidget {
     this.validator,
     this.obscured = false,
     this.keyboardType,
+    this.toggleObscureText = false,
   });
 
   final TextEditingController controller;
@@ -17,24 +18,50 @@ class FormTextField extends StatelessWidget {
   final String? Function(String?)? validator;
   final bool obscured;
   final TextInputType? keyboardType;
+  final bool toggleObscureText;
+
+  @override
+  State<FormTextField> createState() => _FormTextFieldState();
+}
+
+class _FormTextFieldState extends State<FormTextField> {
+  late bool _isObscured;
+
+  @override
+  void initState() {
+    super.initState();
+    _isObscured = widget.obscured;
+  }
 
   @override
   Widget build(BuildContext context) {
     return TextFormField(
-      controller: controller,
-      obscureText: obscured,
-      keyboardType: keyboardType,
-      validator: validator,
+      controller: widget.controller,
+      obscureText: _isObscured,
+      keyboardType: widget.keyboardType,
+      validator: widget.validator,
       decoration: InputDecoration(
-        prefixIcon: Icon(icon, color: Colors.grey.shade500),
+        prefixIcon: Icon(widget.icon, color: Colors.grey.shade500),
         suffixIcon:
-            obscured
+            widget.toggleObscureText && widget.obscured
+                ? IconButton(
+                  onPressed: () {
+                    setState(() => _isObscured = !_isObscured);
+                  },
+                  icon: Icon(
+                    _isObscured
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
+                    color: Colors.grey.shade400,
+                  ),
+                )
+                : widget.obscured
                 ? Icon(
                   Icons.visibility_off_outlined,
                   color: Colors.grey.shade400,
                 )
                 : null,
-        hintText: hint,
+        hintText: widget.hint,
       ),
     );
   }

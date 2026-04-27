@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:memory2care/controllers/app_controller.dart';
-import 'package:memory2care/models/medication_plan.dart';
+import 'package:memory2care/models/medication.dart';
+import 'package:memory2care/models/medication_time.dart';
 import 'package:memory2care/utils/snackbar.dart';
 import 'package:memory2care/utils/validators.dart';
 import 'package:memory2care/widgets/app_scaffold.dart';
@@ -20,29 +21,31 @@ class _EditMedicationScreenState extends State<EditMedicationScreen> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameCtrl;
   late final TextEditingController _doseCtrl;
-  late final TextEditingController _timesCtrl;
   late final TextEditingController _startDateCtrl;
+  late final TextEditingController _endDateCtrl;
   late Set<int> _weekdays;
+  late List<MedicationTime> _timesOfDay;
+  Medication? _editingMedication;
 
   @override
   void initState() {
     super.initState();
-    final plan = widget.controller.medicationPlan;
-    _nameCtrl = TextEditingController(text: plan.medicationName);
-    _doseCtrl = TextEditingController(text: plan.dose);
-    _timesCtrl = TextEditingController(text: plan.timesPerWeek.toString());
+    _nameCtrl = TextEditingController();
+    _doseCtrl = TextEditingController();
     _startDateCtrl = TextEditingController(
-      text: DateFormat('yyyy-MM-dd').format(plan.startDate),
+      text: DateFormat('yyyy-MM-dd').format(DateTime.now()),
     );
-    _weekdays = {...plan.weekdays};
+    _endDateCtrl = TextEditingController();
+    _weekdays = {1, 2, 3, 4, 5, 6, 7};
+    _timesOfDay = [MedicationTime.morning];
   }
 
   @override
   void dispose() {
     _nameCtrl.dispose();
     _doseCtrl.dispose();
-    _timesCtrl.dispose();
     _startDateCtrl.dispose();
+    _endDateCtrl.dispose();
     super.dispose();
   }
 
@@ -59,6 +62,22 @@ class _EditMedicationScreenState extends State<EditMedicationScreen> {
     }
   }
 
+  Future<void> _pickEndDate() async {
+    if (_endDateCtrl.text.isEmpty) {
+      return;
+    }
+    final initial = DateTime.tryParse(_endDateCtrl.text) ?? DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      firstDate: DateTime(2020, 1, 1),
+      lastDate: DateTime(2100, 12, 31),
+      initialDate: initial,
+    );
+    if (picked != null) {
+      _endDateCtrl.text = DateFormat('yyyy-MM-dd').format(picked);
+    }
+  }
+
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) {
       return;
@@ -68,15 +87,27 @@ class _EditMedicationScreenState extends State<EditMedicationScreen> {
       return;
     }
 
-    final plan = MedicationPlan(
-      medicationName: _nameCtrl.text.trim(),
+    final medication = Medication(
+      id:
+          _editingMedication?.id ??
+          'med_${DateTime.now().millisecondsSinceEpoch}',
+      name: _nameCtrl.text.trim(),
       dose: _doseCtrl.text.trim(),
-      timesPerWeek: int.parse(_timesCtrl.text.trim()),
       startDate: DateTime.parse(_startDateCtrl.text),
+      endDate:
+          _endDateCtrl.text.isNotEmpty
+              ? DateTime.parse(_endDateCtrl.text)
+              : null,
+      timesOfDay: _timesOfDay,
       weekdays: _weekdays,
     );
 
-    await widget.controller.updateMedicationPlan(plan);
+    if (_editingMedication != null) {
+      await widget.controller.updateMedication(medication);
+    } else {
+      await widget.controller.addMedication(medication);
+    }
+
     if (mounted) {
       Navigator.of(context).pop();
     }
@@ -93,13 +124,13 @@ class _EditMedicationScreenState extends State<EditMedicationScreen> {
           children: [
             const SizedBox(height: 6),
             const Text(
-              'Edit Medication',
+              'Add/Edit Medication',
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.black54),
             ),
             const SizedBox(height: 18),
             const Text(
-              'your current medication',
+              'Current Medications',
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.black45),
             ),
@@ -107,7 +138,7 @@ class _EditMedicationScreenState extends State<EditMedicationScreen> {
             MedicationSummaryCard(plan: widget.controller.medicationPlan),
             const SizedBox(height: 20),
             const Text(
-              'add new medication',
+              'Add New Medication',
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.black45),
             ),
@@ -126,23 +157,31 @@ class _EditMedicationScreenState extends State<EditMedicationScreen> {
               validator: (value) => requiredField(value, 'Dose'),
             ),
             const SizedBox(height: 12),
-            TextFormField(
-              controller: _timesCtrl,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                hintText: 'How many times a week do you need to take it?',
-              ),
-              validator: (value) {
-                final raw = value?.trim() ?? '';
-                if (raw.isEmpty) {
-                  return 'Times per week is required';
-                }
-                final n = int.tryParse(raw);
-                if (n == null || n < 1 || n > 7) {
-                  return 'Enter a number between 1 and 7';
-                }
-                return null;
-              },
+            const Text(
+              'Times of Day',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children:
+                  MedicationTime.values
+                      .map(
+                        (time) => FilterChip(
+                          selected: _timesOfDay.contains(time),
+                          label: Text(time.displayLabel),
+                          onSelected: (selected) {
+                            setState(() {
+                              if (selected) {
+                                _timesOfDay.add(time);
+                              } else {
+                                _timesOfDay.remove(time);
+                              }
+                            });
+                          },
+                        ),
+                      )
+                      .toList(),
             ),
             const SizedBox(height: 12),
             TextFormField(
@@ -165,6 +204,19 @@ class _EditMedicationScreenState extends State<EditMedicationScreen> {
                 }
                 return null;
               },
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _endDateCtrl,
+              readOnly: true,
+              onTap: _pickEndDate,
+              decoration: const InputDecoration(
+                hintText: 'End date (optional)',
+                suffixIcon: Icon(
+                  Icons.calendar_today_outlined,
+                  color: Color(0xFF5D9CEC),
+                ),
+              ),
             ),
             const SizedBox(height: 14),
             const Text(
@@ -196,7 +248,11 @@ class _EditMedicationScreenState extends State<EditMedicationScreen> {
             const SizedBox(height: 24),
             ElevatedButton(
               onPressed: _save,
-              child: const Text('Update Medication'),
+              child: Text(
+                _editingMedication != null
+                    ? 'Update Medication'
+                    : 'Add Medication',
+              ),
             ),
             const SizedBox(height: 16),
           ],

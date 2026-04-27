@@ -27,15 +27,6 @@ class _MainShellState extends State<MainShell> {
       builder: (context, _) {
         return Scaffold(
           body: screens[_index],
-          floatingActionButtonLocation:
-              FloatingActionButtonLocation.centerDocked,
-          floatingActionButton: FloatingActionButton(
-            shape: const CircleBorder(),
-            backgroundColor: const Color(0xFF5D9CEC),
-            foregroundColor: Colors.white,
-            onPressed: () {},
-            child: const Icon(Icons.qr_code_scanner_rounded),
-          ),
           bottomNavigationBar: BottomAppBar(
             shape: const CircularNotchedRectangle(),
             notchMargin: 8,

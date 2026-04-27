@@ -78,29 +78,3 @@ class ProfileItem extends StatelessWidget {
     );
   }
 }
-
-class FakeToggle extends StatelessWidget {
-  const FakeToggle({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 48,
-      height: 28,
-      decoration: BoxDecoration(
-        color: const Color(0xFFD8DADF),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      alignment: Alignment.centerLeft,
-      child: Container(
-        width: 22,
-        height: 22,
-        margin: const EdgeInsets.only(left: 3),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          shape: BoxShape.circle,
-        ),
-      ),
-    );
-  }
-}

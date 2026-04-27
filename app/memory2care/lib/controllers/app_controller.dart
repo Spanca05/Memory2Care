@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:memory2care/models/auth_result.dart';
+import 'package:memory2care/models/medication.dart';
 import 'package:memory2care/models/medication_plan.dart';
 import 'package:memory2care/models/user_profile.dart';
 import 'package:memory2care/services/auth_service.dart';
@@ -11,23 +12,26 @@ class AppController extends ChangeNotifier {
   final AuthService authService;
   bool _isInitialized = false;
   UserProfile? _currentUser;
-  MedicationPlan _medicationPlan = MedicationPlan.defaultPlan();
-  final Set<DateTime> _takenDates = <DateTime>{};
+  MedicationPlan _medicationPlan = MedicationPlan.empty();
+  // Track taken medications as Map<date, Set<medicationId>>
+  final Map<DateTime, Set<String>> _takenMedications =
+      <DateTime, Set<String>>{};
   DateTime _focusedMonth = DateTime(DateTime.now().year, DateTime.now().month);
 
   bool get isInitialized => _isInitialized;
   UserProfile? get currentUser => _currentUser;
   MedicationPlan get medicationPlan => _medicationPlan;
+  List<Medication> get medications => _medicationPlan.medications;
   DateTime get focusedMonth => _focusedMonth;
 
   Future<void> initialize() async {
     final local = await LocalStore.instance();
-    _currentUser = local.readProfile();
+    _currentUser = local.readStoredUserProfile();
     _medicationPlan =
         local.readMedicationPlan() ?? MedicationPlan.defaultPlan();
-    _takenDates
+    _takenMedications
       ..clear()
-      ..addAll(local.readTakenDates());
+      ..addAll(local.readTakenMedicationsByDate());
     _isInitialized = true;
     notifyListeners();
   }
@@ -43,7 +47,7 @@ class AppController extends ChangeNotifier {
 
     _currentUser = result.user;
     final local = await LocalStore.instance();
-    await local.saveProfile(result.user!);
+    await local.saveUserProfile(result.user!);
     await local.saveAuthToken(result.token ?? 'local-token');
     notifyListeners();
     return result;
@@ -75,7 +79,7 @@ class AppController extends ChangeNotifier {
 
     _currentUser = result.user;
     final local = await LocalStore.instance();
-    await local.saveProfile(result.user!);
+    await local.saveUserProfile(result.user!);
     await local.saveAuthToken(result.token ?? 'local-token');
     notifyListeners();
     return result;
@@ -91,7 +95,7 @@ class AppController extends ChangeNotifier {
   Future<void> updateProfile(UserProfile updated) async {
     _currentUser = updated;
     final local = await LocalStore.instance();
-    await local.saveProfile(updated);
+    await local.saveUserProfile(updated);
     notifyListeners();
   }
 
@@ -102,29 +106,79 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  // Add a new medication to the plan
+  Future<void> addMedication(Medication medication) async {
+    final updated = _medicationPlan.copyWith(
+      medications: [..._medicationPlan.medications, medication],
+    );
+    await updateMedicationPlan(updated);
+  }
+
+  // Update an existing medication
+  Future<void> updateMedication(Medication medication) async {
+    final updated = _medicationPlan.copyWith(
+      medications:
+          _medicationPlan.medications.map((m) {
+            return m.id == medication.id ? medication : m;
+          }).toList(),
+    );
+    await updateMedicationPlan(updated);
+  }
+
+  // Remove a medication from the plan
+  Future<void> removeMedication(String medicationId) async {
+    final updated = _medicationPlan.copyWith(
+      medications:
+          _medicationPlan.medications
+              .where((m) => m.id != medicationId)
+              .toList(),
+    );
+    await updateMedicationPlan(updated);
+  }
+
   bool isDueDate(DateTime date) {
     final normalized = _normalizeDate(date);
-    return _medicationPlan.isDueOn(normalized);
+    return _medicationPlan.getDueToday(normalized).isNotEmpty;
   }
 
-  bool isTaken(DateTime date) {
-    return _takenDates.contains(_normalizeDate(date));
-  }
-
-  Future<void> toggleTaken(DateTime date) async {
+  List<Medication> getDueMedicationsForDate(DateTime date) {
     final normalized = _normalizeDate(date);
-    if (!isDueDate(normalized)) {
+    return _medicationPlan.getDueToday(normalized);
+  }
+
+  bool isMedicationTaken(String medicationId, DateTime date) {
+    final normalized = _normalizeDate(date);
+    return _takenMedications[normalized]?.contains(medicationId) ?? false;
+  }
+
+  int getTakenCountForDate(DateTime date) {
+    final normalized = _normalizeDate(date);
+    final dueMeds = getDueMedicationsForDate(normalized);
+    final takenIds = _takenMedications[normalized] ?? {};
+    return dueMeds.where((m) => takenIds.contains(m.id)).length;
+  }
+
+  Future<void> toggleMedicationTaken(String medicationId, DateTime date) async {
+    final normalized = _normalizeDate(date);
+    final medication = _medicationPlan.medications.firstWhere(
+      (m) => m.id == medicationId,
+    );
+
+    if (!medication.isDueOn(normalized)) {
       return;
     }
 
-    if (_takenDates.contains(normalized)) {
-      _takenDates.remove(normalized);
+    _takenMedications.putIfAbsent(normalized, () => {});
+    final takenSet = _takenMedications[normalized]!;
+
+    if (takenSet.contains(medicationId)) {
+      takenSet.remove(medicationId);
     } else {
-      _takenDates.add(normalized);
+      takenSet.add(medicationId);
     }
 
     final local = await LocalStore.instance();
-    await local.saveTakenDates(_takenDates);
+    await local.saveTakenMedicationsByDate(_takenMedications);
     notifyListeners();
   }
 

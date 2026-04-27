@@ -1,74 +1,81 @@
-class MedicationPlan {
-  MedicationPlan({
-    required this.medicationName,
-    required this.dose,
-    required this.timesPerWeek,
-    required this.startDate,
-    required this.weekdays,
-  });
+import 'package:memory2care/models/medication.dart';
+import 'package:memory2care/models/medication_time.dart';
 
-  final String medicationName;
-  final String dose;
-  final int timesPerWeek;
-  final DateTime startDate;
-  final Set<int> weekdays;
+class MedicationPlan {
+  MedicationPlan({required this.medications});
+
+  final List<Medication> medications;
 
   factory MedicationPlan.defaultPlan() {
     return MedicationPlan(
-      medicationName: 'Donepezil',
-      dose: '5mg',
-      timesPerWeek: 4,
-      startDate: DateTime.now().subtract(const Duration(days: 30)),
-      weekdays: {1, 3, 5, 7},
+      medications: [
+        Medication(
+          id: 'default_1',
+          name: 'Donepezil',
+          dose: '5mg',
+          startDate: DateTime.now().subtract(const Duration(days: 30)),
+          timesOfDay: [MedicationTime.morning],
+          weekdays: {1, 3, 5, 7},
+        ),
+      ],
     );
+  }
+
+  factory MedicationPlan.empty() {
+    return MedicationPlan(medications: []);
   }
 
   bool isDueOn(DateTime date) {
-    final normalizedDate = DateTime(date.year, date.month, date.day);
-    final normalizedStart = DateTime(
-      startDate.year,
-      startDate.month,
-      startDate.day,
-    );
-    if (normalizedDate.isBefore(normalizedStart)) {
-      return false;
-    }
-    return weekdays.contains(normalizedDate.weekday);
+    return medications.any((med) => med.isDueOn(date));
   }
 
-  MedicationPlan copyWith({
-    String? medicationName,
-    String? dose,
-    int? timesPerWeek,
-    DateTime? startDate,
-    Set<int>? weekdays,
-  }) {
-    return MedicationPlan(
-      medicationName: medicationName ?? this.medicationName,
-      dose: dose ?? this.dose,
-      timesPerWeek: timesPerWeek ?? this.timesPerWeek,
-      startDate: startDate ?? this.startDate,
-      weekdays: weekdays ?? this.weekdays,
-    );
+  List<Medication> getDueToday(DateTime date) {
+    return medications.where((med) => med.isDueOn(date)).toList();
+  }
+
+  MedicationPlan copyWith({List<Medication>? medications}) {
+    return MedicationPlan(medications: medications ?? this.medications);
   }
 
   Map<String, dynamic> toMap() {
-    return {
-      'medicationName': medicationName,
-      'dose': dose,
-      'timesPerWeek': timesPerWeek,
-      'startDate': startDate.toIso8601String(),
-      'weekdays': weekdays.toList(),
-    };
+    return {'medications': medications.map((m) => m.toMap()).toList()};
   }
 
   static MedicationPlan fromMap(Map<String, dynamic> map) {
-    return MedicationPlan(
-      medicationName: map['medicationName'] as String,
-      dose: map['dose'] as String,
-      timesPerWeek: map['timesPerWeek'] as int,
-      startDate: DateTime.parse(map['startDate'] as String),
-      weekdays: (map['weekdays'] as List<dynamic>).map((e) => e as int).toSet(),
-    );
+    // Handle legacy single-medication format
+    if (map.containsKey('medicationName') && !map.containsKey('medications')) {
+      final dose = map['dose'] as String? ?? '';
+      final startDate =
+          map['startDate'] != null
+              ? DateTime.parse(map['startDate'] as String)
+              : DateTime.now();
+      final weekdays =
+          (map['weekdays'] as List<dynamic>?)?.map((e) => e as int).toSet() ??
+          {1, 2, 3, 4, 5, 6, 7};
+
+      return MedicationPlan(
+        medications: [
+          Medication(
+            id: 'migrated_${DateTime.now().millisecondsSinceEpoch}',
+            name: map['medicationName'] as String,
+            dose: dose,
+            startDate: startDate,
+            timesOfDay: [MedicationTime.morning],
+            weekdays: weekdays,
+          ),
+        ],
+      );
+    }
+
+    // Handle new multi-medication format
+    final medicationsList =
+        (map['medications'] as List<dynamic>?)
+            ?.map((m) => Medication.fromMap(m as Map<String, dynamic>))
+            .toList() ??
+        [];
+
+    return medicationsList.isEmpty
+        ? MedicationPlan.empty()
+        : MedicationPlan(medications: medicationsList);
   }
 }
