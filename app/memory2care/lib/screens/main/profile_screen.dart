@@ -3,6 +3,7 @@ import 'package:memory2care/controllers/app_controller.dart';
 import 'package:memory2care/screens/auth/login_screen.dart';
 import 'package:memory2care/screens/profile/edit_medication_screen.dart';
 import 'package:memory2care/screens/profile/edit_profile_screen.dart';
+import 'package:memory2care/utils/snackbar.dart';
 import 'package:memory2care/widgets/app_scaffold.dart';
 import 'package:memory2care/widgets/profile_widgets.dart';
 
@@ -101,6 +102,83 @@ class ProfileScreen extends StatelessWidget {
                           (_) => EditMedicationScreen(controller: controller),
                     ),
                   );
+                },
+              ),
+              ProfileItem(
+                icon: Icons.notifications,
+                title: 'Schedule in 2 Minutes',
+                subtitle: 'Test the real notification scheduler',
+                onTap: () async {
+                  await controller.scheduleTestNotificationInTwoMinutes();
+                  if (context.mounted) {
+                    showSnack(
+                      context,
+                      'Test reminder scheduled for 2 minutes from now',
+                    );
+                  }
+                },
+              ),
+              ProfileItem(
+                icon: Icons.notifications_active,
+                title: 'Show Notification Now',
+                subtitle:
+                    'Compare immediate delivery against scheduled delivery',
+                onTap: () async {
+                  await controller
+                      .showImmediateScheduleComparisonNotification();
+                  if (context.mounted) {
+                    showSnack(context, 'Immediate notification sent');
+                  }
+                },
+              ),
+              ProfileItem(
+                icon: Icons.timer,
+                title: 'Schedule in 15 Seconds',
+                subtitle: 'Quick delivery test for the emulator',
+                onTap: () async {
+                  await controller.scheduleTestNotificationInFifteenSeconds();
+                  if (context.mounted) {
+                    showSnack(
+                      context,
+                      'Test reminder scheduled for 15 seconds from now',
+                    );
+                  }
+                },
+              ),
+              ProfileItem(
+                icon: Icons.info_outline,
+                title: 'Check Notification Permissions',
+                subtitle: 'Debug: notification and alarm permissions',
+                onTap: () async {
+                  final perms = await controller.getNotificationPermissions();
+                  if (context.mounted) {
+                    showSnack(
+                      context,
+                      'Permissions: notification=${perms['notification']}, exactAlarm=${perms['scheduleExactAlarm']}, platformEnabled=${perms['platformNotificationsEnabled']}',
+                    );
+                  }
+                },
+              ),
+              ProfileItem(
+                icon: Icons.info_outline,
+                title: 'Check Pending Notifications',
+                subtitle: 'Debug: See how many notifications are scheduled',
+                onTap: () async {
+                  final count = await controller.getPendingNotificationCount();
+                  if (context.mounted) {
+                    showSnack(context, 'Pending notifications: $count');
+                  }
+                },
+              ),
+              ProfileItem(
+                icon: Icons.visibility,
+                title: 'Check Active Notifications',
+                subtitle: 'Debug: See what is currently displayed',
+                onTap: () async {
+                  final count = await controller.getActiveNotificationCount();
+                  if (context.mounted) {
+                    showSnack(context, 'Active notifications: $count');
+                  }
                 },
               ),
               ProfileItem(
