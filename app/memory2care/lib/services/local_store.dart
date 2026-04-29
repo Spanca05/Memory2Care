@@ -1,36 +1,358 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'package:memory2care/models/local_account.dart';
+import 'package:memory2care/models/medication.dart';
 import 'package:memory2care/models/medication_plan.dart';
 import 'package:memory2care/models/user_profile.dart';
+import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sqflite/sqflite.dart';
 
 class LocalStore {
-  LocalStore._(this._prefs);
+  LocalStore._(this._db);
 
   static const _profileKey = 'profile';
   static const _medicationKey = 'medication';
-  static const _takenDatesKey = 'taken_dates';
   static const _takenMedicationsKey = 'taken_medications';
   static const _tokenKey = 'auth_token';
   static const _localAccountKey = 'local_account';
   static const _localAccountsKey = 'local_accounts';
   static const _activeAccountEmailKey = 'active_account_email';
+  static const _migrationFlagKey = 'migrated_from_shared_prefs_v1';
 
-  final SharedPreferences _prefs;
+  static const _appStateTable = 'app_state';
+  static const _accountsTable = 'accounts';
+  static const _medicationsTable = 'medications';
+  static const _takenMedicationsTable = 'taken_medications';
+
+  final Database _db;
+
+  UserProfile? _profileCache;
+  String? _activeAccountEmailCache;
+  final Map<String, LocalAccount> _accountsCache = <String, LocalAccount>{};
+  MedicationPlan _medicationPlanCache = MedicationPlan.empty();
+  final Map<DateTime, Set<String>> _takenMedsCache = <DateTime, Set<String>>{};
+
+  static Future<LocalStore>? _instanceFuture;
 
   static Future<LocalStore> instance() async {
-    final prefs = await SharedPreferences.getInstance();
-    return LocalStore._(prefs);
+    _instanceFuture ??= _create();
+    return _instanceFuture!;
   }
 
-  UserProfile? readProfile() {
-    final raw = _prefs.getString(_profileKey);
+  static Future<LocalStore> _create() async {
+    final dbPath = await getDatabasesPath();
+    final database = await openDatabase(
+      p.join(dbPath, 'memory2care.db'),
+      version: 1,
+      onCreate: (db, version) async {
+        await db.execute('''
+          CREATE TABLE $_appStateTable (
+            key TEXT PRIMARY KEY,
+            value TEXT
+          )
+        ''');
+
+        await db.execute('''
+          CREATE TABLE $_accountsTable (
+            email TEXT PRIMARY KEY,
+            password_hash TEXT,
+            password_salt TEXT,
+            legacy_password TEXT,
+            full_name TEXT NOT NULL,
+            phone TEXT NOT NULL,
+            gender TEXT NOT NULL,
+            birth_date TEXT NOT NULL
+          )
+        ''');
+
+        await db.execute('''
+          CREATE TABLE $_medicationsTable (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            dose TEXT NOT NULL,
+            start_date TEXT NOT NULL,
+            end_date TEXT,
+            times_of_day TEXT NOT NULL,
+            weekdays TEXT NOT NULL,
+            is_active INTEGER NOT NULL,
+            notes TEXT
+          )
+        ''');
+
+        await db.execute('''
+          CREATE TABLE $_takenMedicationsTable (
+            date TEXT NOT NULL,
+            medication_id TEXT NOT NULL,
+            PRIMARY KEY (date, medication_id)
+          )
+        ''');
+      },
+    );
+
+    final store = LocalStore._(database);
+    await store._migrateFromSharedPreferencesIfNeeded();
+    await store._loadCaches();
+    return store;
+  }
+
+  Future<void> _loadCaches() async {
+    _accountsCache
+      ..clear()
+      ..addAll(await _readAccountsFromDb());
+
+    if (kDebugMode && _accountsCache.isNotEmpty) {
+      debugPrint('[LocalStore] Loaded ${_accountsCache.length} account(s) from database');
+    }
+
+    _profileCache = await _readProfileFromDb();
+    _activeAccountEmailCache = await _readAppState(_activeAccountEmailKey);
+    _medicationPlanCache = MedicationPlan(
+      medications: await _readMedicationsFromDb(),
+    );
+
+    _takenMedsCache
+      ..clear()
+      ..addAll(await _readTakenMedsFromDb());
+  }
+
+  Future<void> _migrateFromSharedPreferencesIfNeeded() async {
+    final alreadyMigrated = await _readAppState(_migrationFlagKey) == '1';
+    if (alreadyMigrated) {
+      if (kDebugMode) {
+        debugPrint('[LocalStore] Migration already completed; skipping migration');
+      }
+      return;
+    }
+
+    if (kDebugMode) {
+      debugPrint('[LocalStore] Starting migration from SharedPreferences to SQLite...');
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    final batch = _db.batch();
+
+    final profileRaw = prefs.getString(_profileKey);
+    if (profileRaw != null) {
+      batch.insert(_appStateTable, {
+        'key': _profileKey,
+        'value': profileRaw,
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+    }
+
+    final token = prefs.getString(_tokenKey);
+    if (token != null) {
+      batch.insert(_appStateTable, {
+        'key': _tokenKey,
+        'value': token,
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+    }
+
+    final activeEmail = prefs.getString(_activeAccountEmailKey);
+    if (activeEmail != null) {
+      batch.insert(_appStateTable, {
+        'key': _activeAccountEmailKey,
+        'value': activeEmail.toLowerCase(),
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+    }
+
+    final localAccountsRaw = prefs.getString(_localAccountsKey);
+    if (localAccountsRaw != null) {
+      final decoded = jsonDecode(localAccountsRaw) as Map<String, dynamic>;
+      if (kDebugMode) {
+        debugPrint('[LocalStore] Migrating ${decoded.length} account(s) from SharedPreferences');
+      }
+      for (final entry in decoded.entries) {
+        final account = LocalAccount.fromMap(
+          entry.value as Map<String, dynamic>,
+        );
+        batch.insert(
+          _accountsTable,
+          _accountToRow(account),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+    } else {
+      final legacyRaw = prefs.getString(_localAccountKey);
+      if (legacyRaw != null) {
+        final account = LocalAccount.fromMap(
+          jsonDecode(legacyRaw) as Map<String, dynamic>,
+        );
+        batch.insert(
+          _accountsTable,
+          _accountToRow(account),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+    }
+
+    final medicationRaw = prefs.getString(_medicationKey);
+    if (medicationRaw != null) {
+      final plan = MedicationPlan.fromMap(
+        jsonDecode(medicationRaw) as Map<String, dynamic>,
+      );
+      for (final medication in plan.medications) {
+        batch.insert(
+          _medicationsTable,
+          _medicationToRow(medication),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+    }
+
+    final takenRaw = prefs.getString(_takenMedicationsKey);
+    if (takenRaw != null) {
+      final decoded = jsonDecode(takenRaw) as Map<String, dynamic>;
+      for (final entry in decoded.entries) {
+        final date = DateFormat('yyyy-MM-dd').format(DateTime.parse(entry.key));
+        final meds = (entry.value as List<dynamic>).map((e) => e as String);
+        for (final medicationId in meds) {
+          batch.insert(_takenMedicationsTable, {
+            'date': date,
+            'medication_id': medicationId,
+          }, conflictAlgorithm: ConflictAlgorithm.replace);
+        }
+      }
+    }
+
+    batch.insert(_appStateTable, {
+      'key': _migrationFlagKey,
+      'value': '1',
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+
+    await batch.commit(noResult: true);
+    if (kDebugMode) {
+      debugPrint('[LocalStore] Migration completed successfully');
+    }
+  }
+
+  Future<String?> _readAppState(String key) async {
+    final rows = await _db.query(
+      _appStateTable,
+      columns: ['value'],
+      where: 'key = ?',
+      whereArgs: [key],
+      limit: 1,
+    );
+    if (rows.isEmpty) {
+      return null;
+    }
+    return rows.first['value'] as String?;
+  }
+
+  Future<void> _writeAppState(String key, String? value) async {
+    if (value == null) {
+      await _db.delete(_appStateTable, where: 'key = ?', whereArgs: [key]);
+      return;
+    }
+
+    await _db.insert(_appStateTable, {
+      'key': key,
+      'value': value,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<UserProfile?> _readProfileFromDb() async {
+    final raw = await _readAppState(_profileKey);
     if (raw == null) {
       return null;
     }
     return UserProfile.fromMap(jsonDecode(raw) as Map<String, dynamic>);
+  }
+
+  Future<Map<String, LocalAccount>> _readAccountsFromDb() async {
+    final rows = await _db.query(_accountsTable);
+    final accounts = <String, LocalAccount>{};
+    for (final row in rows) {
+      final account = _rowToAccount(row);
+      accounts[account.email.toLowerCase()] = account;
+    }
+    return accounts;
+  }
+
+  Future<List<Medication>> _readMedicationsFromDb() async {
+    final rows = await _db.query(_medicationsTable);
+    return rows.map((row) => _rowToMedication(row)).toList();
+  }
+
+  Future<Map<DateTime, Set<String>>> _readTakenMedsFromDb() async {
+    final rows = await _db.query(_takenMedicationsTable);
+    final result = <DateTime, Set<String>>{};
+    for (final row in rows) {
+      final date = DateTime.parse(row['date'] as String);
+      result.putIfAbsent(date, () => <String>{});
+      result[date]!.add(row['medication_id'] as String);
+    }
+    return result;
+  }
+
+  Map<String, dynamic> _accountToRow(LocalAccount account) {
+    return {
+      'email': account.email.toLowerCase(),
+      'password_hash': account.passwordHash,
+      'password_salt': account.passwordSalt,
+      'legacy_password': account.legacyPassword,
+      'full_name': account.profile.fullName,
+      'phone': account.profile.phone,
+      'gender': account.profile.gender,
+      'birth_date': account.profile.birthDate.toIso8601String(),
+    };
+  }
+
+  LocalAccount _rowToAccount(Map<String, Object?> row) {
+    final email = row['email']! as String;
+    return LocalAccount(
+      email: email,
+      passwordHash: row['password_hash'] as String?,
+      passwordSalt: row['password_salt'] as String?,
+      legacyPassword: row['legacy_password'] as String?,
+      profile: UserProfile(
+        fullName: row['full_name']! as String,
+        email: email,
+        phone: row['phone']! as String,
+        gender: row['gender']! as String,
+        birthDate: DateTime.parse(row['birth_date']! as String),
+      ),
+    );
+  }
+
+  Map<String, dynamic> _medicationToRow(Medication medication) {
+    final map = medication.toMap();
+    return {
+      'id': map['id'] as String,
+      'name': map['name'] as String,
+      'dose': map['dose'] as String,
+      'start_date': map['startDate'] as String,
+      'end_date': map['endDate'] as String?,
+      'times_of_day': jsonEncode(map['timesOfDay'] as List<dynamic>),
+      'weekdays': jsonEncode(map['weekdays'] as List<dynamic>),
+      'is_active': (map['isActive'] as bool) ? 1 : 0,
+      'notes': map['notes'] as String?,
+    };
+  }
+
+  Medication _rowToMedication(Map<String, Object?> row) {
+    return MedicationPlan.fromMap({
+      'medications': [
+        {
+          'id': row['id'],
+          'name': row['name'],
+          'dose': row['dose'],
+          'startDate': row['start_date'],
+          'endDate': row['end_date'],
+          'timesOfDay': jsonDecode(row['times_of_day']! as String),
+          'weekdays': jsonDecode(row['weekdays']! as String),
+          'isActive': (row['is_active'] as int) == 1,
+          'notes': row['notes'],
+        },
+      ],
+    }).medications.first;
+  }
+
+  UserProfile? readProfile() {
+    return _profileCache;
   }
 
   UserProfile? readStoredUserProfile() {
@@ -38,7 +360,8 @@ class LocalStore {
   }
 
   Future<void> saveProfile(UserProfile profile) {
-    return _prefs.setString(_profileKey, jsonEncode(profile.toMap()));
+    _profileCache = profile;
+    return _writeAppState(_profileKey, jsonEncode(profile.toMap()));
   }
 
   Future<void> saveUserProfile(UserProfile profile) async {
@@ -60,11 +383,21 @@ class LocalStore {
       final accounts = readLocalAccounts();
       accounts.remove(oldEmail);
       accounts[newEmail] = updatedAccount;
-      await _prefs.setString(
-        _localAccountsKey,
-        jsonEncode(accounts.map((key, value) => MapEntry(key, value.toMap()))),
-      );
-      await _prefs.remove(_localAccountKey);
+      await _db.transaction((txn) async {
+        await txn.delete(
+          _accountsTable,
+          where: 'email = ?',
+          whereArgs: [oldEmail],
+        );
+        await txn.insert(
+          _accountsTable,
+          _accountToRow(updatedAccount),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      });
+      _accountsCache
+        ..remove(oldEmail)
+        ..[newEmail] = updatedAccount;
     } else {
       await upsertLocalAccount(updatedAccount);
     }
@@ -73,90 +406,90 @@ class LocalStore {
   }
 
   MedicationPlan? readMedicationPlan() {
-    final raw = _prefs.getString(_medicationKey);
-    if (raw == null) {
-      return null;
-    }
-    return MedicationPlan.fromMap(jsonDecode(raw) as Map<String, dynamic>);
+    return _medicationPlanCache.medications.isEmpty
+        ? null
+        : _medicationPlanCache;
   }
 
-  Future<void> saveMedicationPlan(MedicationPlan plan) {
-    return _prefs.setString(_medicationKey, jsonEncode(plan.toMap()));
+  Future<void> saveMedicationPlan(MedicationPlan plan) async {
+    await _db.transaction((txn) async {
+      await txn.delete(_medicationsTable);
+      for (final medication in plan.medications) {
+        await txn.insert(
+          _medicationsTable,
+          _medicationToRow(medication),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+    });
+    _medicationPlanCache = plan;
   }
 
   Set<DateTime> readTakenDates() {
-    final raw = _prefs.getStringList(_takenDatesKey) ?? <String>[];
-    return raw
-        .map(DateTime.tryParse)
-        .whereType<DateTime>()
-        .map((date) => DateTime(date.year, date.month, date.day))
-        .toSet();
+    return _takenMedsCache.keys.toSet();
   }
 
   Future<void> saveTakenDates(Set<DateTime> dates) {
-    final list = dates.map((d) => DateFormat('yyyy-MM-dd').format(d)).toList();
-    return _prefs.setStringList(_takenDatesKey, list);
+    return Future<void>.value();
   }
 
   Map<DateTime, Set<String>> readTakenMedicationsByDate() {
-    final raw = _prefs.getString(_takenMedicationsKey);
-    if (raw == null) {
-      return <DateTime, Set<String>>{};
-    }
-
-    final decoded = jsonDecode(raw) as Map<String, dynamic>;
-    return decoded.map(
-      (dateStr, medicationIds) => MapEntry(
-        DateTime.parse(dateStr),
-        (medicationIds as List<dynamic>).map((e) => e as String).toSet(),
+    return Map<DateTime, Set<String>>.from(
+      _takenMedsCache.map(
+        (key, value) => MapEntry(
+          DateTime(key.year, key.month, key.day),
+          Set<String>.from(value),
+        ),
       ),
     );
   }
 
   Future<void> saveTakenMedicationsByDate(
     Map<DateTime, Set<String>> takenMeds,
-  ) {
-    final encoded = takenMeds.map(
-      (date, medIds) =>
-          MapEntry(DateFormat('yyyy-MM-dd').format(date), medIds.toList()),
-    );
-    return _prefs.setString(_takenMedicationsKey, jsonEncode(encoded));
+  ) async {
+    await _db.transaction((txn) async {
+      await txn.delete(_takenMedicationsTable);
+      for (final entry in takenMeds.entries) {
+        final date = DateFormat('yyyy-MM-dd').format(entry.key);
+        for (final medicationId in entry.value) {
+          await txn.insert(_takenMedicationsTable, {
+            'date': date,
+            'medication_id': medicationId,
+          }, conflictAlgorithm: ConflictAlgorithm.replace);
+        }
+      }
+    });
+
+    _takenMedsCache
+      ..clear()
+      ..addAll(
+        takenMeds.map(
+          (key, value) => MapEntry(
+            DateTime(key.year, key.month, key.day),
+            Set<String>.from(value),
+          ),
+        ),
+      );
   }
 
   Future<void> saveAuthToken(String token) {
-    return _prefs.setString(_tokenKey, token);
+    return _writeAppState(_tokenKey, token);
   }
 
   Future<void> clearAuthToken() async {
-    await _prefs.remove(_tokenKey);
-    await _prefs.remove(_profileKey);
-    await _prefs.remove(_activeAccountEmailKey);
+    _profileCache = null;
+    _activeAccountEmailCache = null;
+    await _writeAppState(_tokenKey, null);
+    await _writeAppState(_profileKey, null);
+    await _writeAppState(_activeAccountEmailKey, null);
   }
 
   LocalAccount? readLegacyLocalAccount() {
-    final raw = _prefs.getString(_localAccountKey);
-    if (raw == null) {
-      return null;
-    }
-    return LocalAccount.fromMap(jsonDecode(raw) as Map<String, dynamic>);
+    return _accountsCache.values.isEmpty ? null : _accountsCache.values.first;
   }
 
   Map<String, LocalAccount> readLocalAccounts() {
-    final raw = _prefs.getString(_localAccountsKey);
-    if (raw != null) {
-      final decoded = jsonDecode(raw) as Map<String, dynamic>;
-      return decoded.map(
-        (key, value) =>
-            MapEntry(key, LocalAccount.fromMap(value as Map<String, dynamic>)),
-      );
-    }
-
-    final legacy = readLegacyLocalAccount();
-    if (legacy == null) {
-      return <String, LocalAccount>{};
-    }
-
-    return <String, LocalAccount>{legacy.email.toLowerCase(): legacy};
+    return Map<String, LocalAccount>.from(_accountsCache);
   }
 
   LocalAccount? readLocalAccountByEmail(String email) {
@@ -172,22 +505,26 @@ class LocalStore {
   }
 
   String? readActiveAccountEmail() {
-    return _prefs.getString(_activeAccountEmailKey);
+    return _activeAccountEmailCache;
   }
 
   Future<void> setActiveAccountEmail(String email) {
-    return _prefs.setString(_activeAccountEmailKey, email.toLowerCase());
+    _activeAccountEmailCache = email.toLowerCase();
+    return _writeAppState(_activeAccountEmailKey, _activeAccountEmailCache);
   }
 
   Future<void> upsertLocalAccount(LocalAccount account) async {
-    final accounts = readLocalAccounts();
     final targetKey = account.email.toLowerCase();
 
-    accounts[targetKey] = account;
-    await _prefs.setString(
-      _localAccountsKey,
-      jsonEncode(accounts.map((key, value) => MapEntry(key, value.toMap()))),
+    if (kDebugMode) {
+      debugPrint('[LocalStore] Saving account: $targetKey');
+    }
+
+    await _db.insert(
+      _accountsTable,
+      _accountToRow(account.copyWith(email: targetKey)),
+      conflictAlgorithm: ConflictAlgorithm.replace,
     );
-    await _prefs.remove(_localAccountKey);
+    _accountsCache[targetKey] = account.copyWith(email: targetKey);
   }
 }
