@@ -6,6 +6,7 @@ import 'package:memory2care/screens/profile/edit_profile_screen.dart';
 import 'package:memory2care/utils/snackbar.dart';
 import 'package:memory2care/widgets/app_scaffold.dart';
 import 'package:memory2care/widgets/profile_widgets.dart';
+import 'package:memory2care/screens/profile/about_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key, required this.controller});
@@ -186,24 +187,52 @@ class ProfileScreen extends StatelessWidget {
                 title: 'Log out',
                 subtitle: 'Further secure your account for safety',
                 onTap: () async {
-                  await controller.logout();
-                  if (context.mounted) {
-                    Navigator.of(context).pushAndRemoveUntil(
-                      MaterialPageRoute(
-                        builder: (_) => LoginScreen(controller: controller),
-                      ),
-                      (_) => false,
-                    );
+                  final confirm = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('Confirm log out'),
+                      content: const Text('Are you sure you want to log out?'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.of(ctx).pop(false),
+                          child: const Text('Cancel'),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.of(ctx).pop(true),
+                          child: const Text('Log out'),
+                        ),
+                      ],
+                    ),
+                  );
+
+                  if (confirm == true) {
+                    await controller.logout();
+                    if (context.mounted) {
+                      Navigator.of(context).pushAndRemoveUntil(
+                        MaterialPageRoute(
+                          builder: (_) => LoginScreen(controller: controller),
+                        ),
+                        (_) => false,
+                      );
+                    }
                   }
                 },
               ),
             ],
           ),
           const SizedBox(height: 16),
-          const ProfileSection(
+          ProfileSection(
             items: [
-              ProfileItem(icon: Icons.help_outline, title: 'Help & Support'),
-              ProfileItem(icon: Icons.favorite_border, title: 'About App'),
+              const ProfileItem(icon: Icons.help_outline, title: 'Help & Support'),
+              ProfileItem(
+                icon: Icons.favorite_border,
+                title: 'About App',
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const AboutScreen()),
+                  );
+                },
+              ),
             ],
           ),
         ],
