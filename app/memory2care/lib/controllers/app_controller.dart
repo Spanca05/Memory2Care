@@ -83,6 +83,18 @@ class AppController extends ChangeNotifier {
     );
   }
 
+  Future<AuthResult> resetPassword({
+    required String email,
+    required String phone,
+    required String newPassword,
+  }) {
+    return authService.resetPassword(
+      email: email,
+      phone: phone,
+      newPassword: newPassword,
+    );
+  }
+
   Future<AuthResult> completeRegistration({
     required String phone,
     required String otpCode,

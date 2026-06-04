@@ -216,4 +216,59 @@ class AuthService {
     _pending = null;
     return AuthResult(success: true, user: user, token: 'local-token');
   }
+
+  Future<AuthResult> resetPassword({
+    required String email,
+    required String phone,
+    required String newPassword,
+  }) async {
+    if (_hasRemote) {
+      try {
+        final response = await http.post(
+          Uri.parse('$baseUrl/reset-password'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'email': email,
+            'phone': phone,
+            'newPassword': newPassword,
+          }),
+        );
+
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          return AuthResult(success: true);
+        }
+      } catch (_) {}
+    }
+
+    final local = await LocalStore.instance();
+    final account = local.readLocalAccountByEmail(email);
+    if (account == null) {
+      return AuthResult(
+        success: false,
+        message: 'No account found with this email.',
+      );
+    }
+
+    final normalizedPhone = phone.replaceAll(RegExp(r'\s+'), '');
+    final accountPhone = account.profile.phone.replaceAll(RegExp(r'\s+'), '');
+    if (accountPhone != normalizedPhone) {
+      return AuthResult(
+        success: false,
+        message: 'Phone number does not match this account.',
+      );
+    }
+
+    final salt = generateSalt();
+    final hash = hashPassword(password: newPassword, salt: salt);
+
+    await local.upsertLocalAccount(
+      account.copyWith(
+        passwordHash: hash,
+        passwordSalt: salt,
+        legacyPassword: null,
+      ),
+    );
+
+    return AuthResult(success: true);
+  }
 }

@@ -55,6 +55,147 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
+  Future<void> _openResetPasswordDialog() async {
+    final dialogFormKey = GlobalKey<FormState>();
+    final resetEmailCtrl = TextEditingController(text: _emailCtrl.text.trim());
+    final resetPhoneCtrl = TextEditingController();
+    final newPasswordCtrl = TextEditingController();
+    final confirmPasswordCtrl = TextEditingController();
+    var loading = false;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (_, setDialogState) {
+            Future<void> submitReset() async {
+              if (!dialogFormKey.currentState!.validate()) {
+                return;
+              }
+
+              final navigator = Navigator.of(dialogContext);
+              final messenger = ScaffoldMessenger.of(context);
+
+              setDialogState(() => loading = true);
+              try {
+                final result = await widget.controller.resetPassword(
+                  email: resetEmailCtrl.text.trim(),
+                  phone: resetPhoneCtrl.text.trim(),
+                  newPassword: newPasswordCtrl.text,
+                );
+                if (!mounted || !dialogContext.mounted) {
+                  return;
+                }
+                setDialogState(() => loading = false);
+
+                if (!result.success) {
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: Text(result.message ?? 'Unable to reset password'),
+                    ),
+                  );
+                  return;
+                }
+
+                navigator.pop();
+                messenger.showSnackBar(
+                  const SnackBar(
+                    content: Text('Password updated. You can now log in.'),
+                  ),
+                );
+              } catch (_) {
+                if (!mounted || !dialogContext.mounted) {
+                  return;
+                }
+                setDialogState(() => loading = false);
+                messenger.showSnackBar(
+                  const SnackBar(
+                    content: Text('Unexpected error while resetting password.'),
+                  ),
+                );
+              }
+            }
+
+            return AlertDialog(
+              title: const Text('Reset Password'),
+              content: Form(
+                key: dialogFormKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    FormTextField(
+                      controller: resetEmailCtrl,
+                      icon: Icons.mail_outline,
+                      hint: 'Email',
+                      validator: validateEmail,
+                    ),
+                    const SizedBox(height: 12),
+                    FormTextField(
+                      controller: resetPhoneCtrl,
+                      icon: Icons.phone_outlined,
+                      hint: 'Phone Number',
+                      keyboardType: TextInputType.phone,
+                      validator: validatePhone,
+                    ),
+                    const SizedBox(height: 12),
+                    FormTextField(
+                      controller: newPasswordCtrl,
+                      icon: Icons.lock_outline,
+                      hint: 'New Password',
+                      obscured: true,
+                      toggleObscureText: true,
+                      validator: validatePassword,
+                    ),
+                    const SizedBox(height: 12),
+                    FormTextField(
+                      controller: confirmPasswordCtrl,
+                      icon: Icons.lock_outline,
+                      hint: 'Confirm New Password',
+                      obscured: true,
+                      toggleObscureText: true,
+                      validator: (value) {
+                        final required = requiredField(
+                          value,
+                          'Confirm new password',
+                        );
+                        if (required != null) {
+                          return required;
+                        }
+                        if (value != newPasswordCtrl.text) {
+                          return 'Passwords do not match';
+                        }
+                        return null;
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed:
+                      loading ? null : () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: loading ? null : submitReset,
+                  child:
+                      loading
+                          ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                          : const Text('Reset'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+  }
+
   @override
   Widget build(BuildContext context) {
     final muted = Colors.grey.shade500;
@@ -91,9 +232,12 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 10),
                 Align(
                   alignment: Alignment.centerRight,
-                  child: Text(
-                    'Forget Password ?',
-                    style: TextStyle(color: muted),
+                  child: GestureDetector(
+                    onTap: _loading ? null : _openResetPasswordDialog,
+                    child: Text(
+                      'Forget Password ?',
+                      style: TextStyle(color: muted),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 20),

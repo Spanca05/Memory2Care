@@ -104,7 +104,9 @@ class LocalStore {
       ..addAll(await _readAccountsFromDb());
 
     if (kDebugMode && _accountsCache.isNotEmpty) {
-      debugPrint('[LocalStore] Loaded ${_accountsCache.length} account(s) from database');
+      debugPrint(
+        '[LocalStore] Loaded ${_accountsCache.length} account(s) from database',
+      );
     }
 
     _profileCache = await _readProfileFromDb();
@@ -122,13 +124,17 @@ class LocalStore {
     final alreadyMigrated = await _readAppState(_migrationFlagKey) == '1';
     if (alreadyMigrated) {
       if (kDebugMode) {
-        debugPrint('[LocalStore] Migration already completed; skipping migration');
+        debugPrint(
+          '[LocalStore] Migration already completed; skipping migration',
+        );
       }
       return;
     }
 
     if (kDebugMode) {
-      debugPrint('[LocalStore] Starting migration from SharedPreferences to SQLite...');
+      debugPrint(
+        '[LocalStore] Starting migration from SharedPreferences to SQLite...',
+      );
     }
 
     final prefs = await SharedPreferences.getInstance();
@@ -162,7 +168,9 @@ class LocalStore {
     if (localAccountsRaw != null) {
       final decoded = jsonDecode(localAccountsRaw) as Map<String, dynamic>;
       if (kDebugMode) {
-        debugPrint('[LocalStore] Migrating ${decoded.length} account(s) from SharedPreferences');
+        debugPrint(
+          '[LocalStore] Migrating ${decoded.length} account(s) from SharedPreferences',
+        );
       }
       for (final entry in decoded.entries) {
         final account = LocalAccount.fromMap(
