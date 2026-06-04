@@ -66,7 +66,7 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
 
     return Scaffold(
       body: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: Form(
             key: _formKey,
@@ -83,7 +83,7 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
                     ),
                   ),
                 ),
-                const Spacer(),
+                const SizedBox(height: 32),
                 const Text(
                   'Create your\naccount',
                   textAlign: TextAlign.center,
@@ -157,7 +157,7 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
                     ),
                   ],
                 ),
-                const Spacer(flex: 2),
+                const SizedBox(height: 24),
               ],
             ),
           ),
