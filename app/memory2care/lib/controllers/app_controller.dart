@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:memory2care/models/auth_result.dart';
 import 'package:memory2care/models/medication.dart';
 import 'package:memory2care/models/medication_plan.dart';
 import 'package:memory2care/models/user_profile.dart';
 import 'package:memory2care/services/auth_service.dart';
 import 'package:memory2care/services/local_store.dart';
+import 'package:memory2care/services/notification_service.dart';
 
 class AppController extends ChangeNotifier {
   AppController({required this.authService});
 
   final AuthService authService;
+  late final NotificationService _notificationService;
   bool _isInitialized = false;
   UserProfile? _currentUser;
   MedicationPlan _medicationPlan = MedicationPlan.empty();
@@ -25,6 +28,14 @@ class AppController extends ChangeNotifier {
   DateTime get focusedMonth => _focusedMonth;
 
   Future<void> initialize() async {
+    _notificationService = NotificationService();
+
+    try {
+      await _notificationService.initialize();
+    } catch (_) {
+      // Notification setup should never block the app bootstrap.
+    }
+
     final local = await LocalStore.instance();
     _currentUser = local.readStoredUserProfile();
     _medicationPlan =
@@ -32,8 +43,15 @@ class AppController extends ChangeNotifier {
     _takenMedications
       ..clear()
       ..addAll(local.readTakenMedicationsByDate());
+
     _isInitialized = true;
     notifyListeners();
+
+    try {
+      await _resyncMedicationNotifications();
+    } catch (_) {
+      // If resync fails, keep the app usable and surface nothing fatal.
+    }
   }
 
   Future<AuthResult> login({
@@ -112,10 +130,23 @@ class AppController extends ChangeNotifier {
       medications: [..._medicationPlan.medications, medication],
     );
     await updateMedicationPlan(updated);
+    await scheduleNotificationsForMedication(medication);
   }
 
   // Update an existing medication
   Future<void> updateMedication(Medication medication) async {
+    Medication? existing;
+    for (final candidate in _medicationPlan.medications) {
+      if (candidate.id == medication.id) {
+        existing = candidate;
+        break;
+      }
+    }
+
+    if (existing != null) {
+      await cancelNotificationsForMedication(existing);
+    }
+
     final updated = _medicationPlan.copyWith(
       medications:
           _medicationPlan.medications.map((m) {
@@ -123,10 +154,23 @@ class AppController extends ChangeNotifier {
           }).toList(),
     );
     await updateMedicationPlan(updated);
+    await scheduleNotificationsForMedication(medication);
   }
 
   // Remove a medication from the plan
   Future<void> removeMedication(String medicationId) async {
+    Medication? existing;
+    for (final candidate in _medicationPlan.medications) {
+      if (candidate.id == medicationId) {
+        existing = candidate;
+        break;
+      }
+    }
+
+    if (existing != null) {
+      await cancelNotificationsForMedication(existing);
+    }
+
     final updated = _medicationPlan.copyWith(
       medications:
           _medicationPlan.medications
@@ -185,6 +229,87 @@ class AppController extends ChangeNotifier {
   void setFocusedMonth(DateTime month) {
     _focusedMonth = DateTime(month.year, month.month);
     notifyListeners();
+  }
+
+  /// Schedule notifications for a medication (all times of day)
+  Future<void> scheduleNotificationsForMedication(Medication medication) async {
+    for (final timeOfDay in medication.timesOfDay) {
+      final notificationId = '${medication.id}_${timeOfDay.name}'.hashCode;
+      await _notificationService.scheduleDailyMedicationReminder(
+        id: notificationId.abs(),
+        medicationName: medication.name,
+        timeOfDay: timeOfDay.defaultTime,
+        payload: medication.id,
+      );
+    }
+  }
+
+  /// Cancel notifications for a medication
+  Future<void> cancelNotificationsForMedication(Medication medication) async {
+    for (final timeOfDay in medication.timesOfDay) {
+      final notificationId = '${medication.id}_${timeOfDay.name}'.hashCode;
+      await _notificationService.cancelNotification(notificationId.abs());
+    }
+  }
+
+  Future<void> _resyncMedicationNotifications() async {
+    await _notificationService.cancelAllNotifications();
+    for (final medication in _medicationPlan.medications) {
+      if (medication.isActive) {
+        await scheduleNotificationsForMedication(medication);
+      }
+    }
+  }
+
+  /// Show a test notification (for demo)
+  Future<void> showTestNotification(String title, String body) async {
+    await _notificationService.showNotification(title: title, body: body);
+  }
+
+  /// Show the same test payload immediately to compare delivery against scheduling.
+  Future<void> showImmediateScheduleComparisonNotification() async {
+    await _notificationService.showNotification(
+      title: 'Memory2Care test reminder',
+      body: 'Immediate delivery comparison notification.',
+    );
+  }
+
+  /// Schedule a one-off test notification two minutes from now.
+  Future<void> scheduleTestNotificationInTwoMinutes() async {
+    await _notificationService.scheduleNotificationAfterDuration(
+      id: DateTime.now().millisecondsSinceEpoch.remainder(1000000),
+      title: 'Memory2Care test reminder',
+      body: 'This notification was scheduled 2 minutes ago.',
+      delay: const Duration(minutes: 2),
+    );
+  }
+
+  /// Schedule a short test notification after 15 seconds.
+  Future<void> scheduleTestNotificationInFifteenSeconds() async {
+    await _notificationService.scheduleNotificationAfterDuration(
+      id: DateTime.now().millisecondsSinceEpoch.remainder(1000000),
+      title: 'Memory2Care test reminder',
+      body: 'This notification was scheduled 15 seconds ago.',
+      delay: const Duration(seconds: 15),
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+    );
+  }
+
+  /// Get pending notifications (for debugging)
+  Future<int> getPendingNotificationCount() async {
+    final pending = await _notificationService.getPendingNotifications();
+    return pending.length;
+  }
+
+  /// Get active notifications currently displayed by Android.
+  Future<int> getActiveNotificationCount() async {
+    final active = await _notificationService.getActiveNotifications();
+    return active.length;
+  }
+
+  /// Get notification permission/status info (for debugging)
+  Future<Map<String, String>> getNotificationPermissions() async {
+    return await _notificationService.checkNotificationPermissions();
   }
 
   DateTime _normalizeDate(DateTime value) =>
