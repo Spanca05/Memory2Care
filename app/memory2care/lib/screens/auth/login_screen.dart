@@ -194,10 +194,6 @@ class _LoginScreenState extends State<LoginScreen> {
       },
     );
 
-    resetEmailCtrl.dispose();
-    resetPhoneCtrl.dispose();
-    newPasswordCtrl.dispose();
-    confirmPasswordCtrl.dispose();
   }
 
   @override
