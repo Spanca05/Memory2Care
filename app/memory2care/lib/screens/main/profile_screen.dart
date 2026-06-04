@@ -7,6 +7,7 @@ import 'package:memory2care/utils/snackbar.dart';
 import 'package:memory2care/widgets/app_scaffold.dart';
 import 'package:memory2care/widgets/profile_widgets.dart';
 import 'package:memory2care/screens/profile/about_screen.dart';
+import 'package:memory2care/screens/profile/help_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key, required this.controller});
@@ -223,7 +224,15 @@ class ProfileScreen extends StatelessWidget {
           const SizedBox(height: 16),
           ProfileSection(
             items: [
-              const ProfileItem(icon: Icons.help_outline, title: 'Help & Support'),
+              ProfileItem(
+                icon: Icons.help_outline,
+                title: 'Help & Support',
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const HelpScreen()),
+                  );
+                },
+              ),
               ProfileItem(
                 icon: Icons.favorite_border,
                 title: 'About App',
