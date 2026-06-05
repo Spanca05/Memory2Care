@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:memory2care/controllers/app_controller.dart';
+import 'package:memory2care/screens/ar/ar_scan_screen.dart';
 import 'package:memory2care/screens/main/home_screen.dart';
 import 'package:memory2care/screens/main/profile_screen.dart';
 
@@ -27,6 +28,15 @@ class _MainShellState extends State<MainShell> {
       builder: (context, _) {
         return Scaffold(
           body: screens[_index],
+          floatingActionButton: FloatingActionButton(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => ArScanScreen(controller: widget.controller),
+              ),
+            ),
+            child: const Icon(Icons.qr_code_scanner),
+          ),
+          floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
           bottomNavigationBar: BottomAppBar(
             shape: const CircularNotchedRectangle(),
             notchMargin: 8,
