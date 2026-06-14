@@ -324,6 +324,73 @@ class AppController extends ChangeNotifier {
     return await _notificationService.checkNotificationPermissions();
   }
 
+  List<({DateTime date, int due, int taken})> getAdherenceByDay(
+    DateTime start,
+    DateTime end, {
+    String? medicationId,
+  }) {
+    final result = <({DateTime date, int due, int taken})>[];
+    var current = _normalizeDate(start);
+    final normalizedEnd = _normalizeDate(end);
+
+    while (!current.isAfter(normalizedEnd)) {
+      final dueMeds = getDueMedicationsForDate(current);
+      final filtered =
+          medicationId != null
+              ? dueMeds.where((m) => m.id == medicationId).toList()
+              : dueMeds;
+      final takenIds = _takenMedications[current] ?? {};
+      final taken = filtered.where((m) => takenIds.contains(m.id)).length;
+      result.add((date: current, due: filtered.length, taken: taken));
+      current = current.add(const Duration(days: 1));
+    }
+
+    return result;
+  }
+
+  double getAdherenceRate(
+    DateTime start,
+    DateTime end, {
+    String? medicationId,
+  }) {
+    final data = getAdherenceByDay(start, end, medicationId: medicationId);
+    final relevant = data.where((d) => d.due > 0).toList();
+    if (relevant.isEmpty) return 0;
+    final totalDue = relevant.fold<int>(0, (s, d) => s + d.due);
+    final totalTaken = relevant.fold<int>(0, (s, d) => s + d.taken);
+    return totalDue > 0 ? totalTaken / totalDue * 100 : 0;
+  }
+
+  int getCurrentStreak({String? medicationId}) {
+    var streak = 0;
+    var date = _normalizeDate(DateTime.now());
+
+    for (var i = 0; i < 365; i++) {
+      final dueMeds = getDueMedicationsForDate(date);
+      final filtered =
+          medicationId != null
+              ? dueMeds.where((m) => m.id == medicationId).toList()
+              : dueMeds;
+
+      if (filtered.isEmpty) {
+        date = date.subtract(const Duration(days: 1));
+        continue;
+      }
+
+      final takenIds = _takenMedications[date] ?? {};
+      final taken = filtered.where((m) => takenIds.contains(m.id)).length;
+
+      if (taken == filtered.length) {
+        streak++;
+        date = date.subtract(const Duration(days: 1));
+      } else {
+        break;
+      }
+    }
+
+    return streak;
+  }
+
   DateTime _normalizeDate(DateTime value) =>
       DateTime(value.year, value.month, value.day);
 }

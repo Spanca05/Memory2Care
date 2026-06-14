@@ -3,7 +3,6 @@ import 'package:memory2care/controllers/app_controller.dart';
 import 'package:memory2care/screens/auth/login_screen.dart';
 import 'package:memory2care/screens/profile/edit_medication_screen.dart';
 import 'package:memory2care/screens/profile/edit_profile_screen.dart';
-import 'package:memory2care/utils/snackbar.dart';
 import 'package:memory2care/widgets/app_scaffold.dart';
 import 'package:memory2care/widgets/profile_widgets.dart';
 import 'package:memory2care/screens/profile/about_screen.dart';
@@ -19,31 +18,40 @@ class ProfileScreen extends StatelessWidget {
     final profile = controller.currentUser;
 
     return AppScaffold(
-      title: 'Memory2Care',
+      title: 'Profile',
       body: ListView(
         children: [
           const SizedBox(height: 18),
+          // Profile header card
           Container(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
-              color: const Color(0xFF5D9CEC),
-              borderRadius: BorderRadius.circular(14),
+              gradient: const LinearGradient(
+                colors: [Color(0xFF5D9CEC), Color(0xFF3A6FBC)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.12),
-                  blurRadius: 14,
+                  color: const Color(0xFF5D9CEC).withValues(alpha: 0.3),
+                  blurRadius: 16,
                   offset: const Offset(0, 6),
                 ),
               ],
             ),
             child: Row(
               children: [
-                const CircleAvatar(
-                  radius: 26,
-                  backgroundColor: Color(0xFFDDECFF),
-                  child: Icon(Icons.person, color: Color(0xFF5D9CEC), size: 34),
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.person, color: Colors.white, size: 32),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -52,158 +60,82 @@ class ProfileScreen extends StatelessWidget {
                         profile?.fullName ?? 'Guest User',
                         style: const TextStyle(
                           color: Colors.white,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w700,
                           fontSize: 17,
                         ),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 3),
                       Text(
-                        profile?.username ?? '@guest',
-                        style: const TextStyle(color: Color(0xFFCDE2FF)),
+                        profile?.email ?? '',
+                        style: const TextStyle(
+                          color: Color(0xFFCCE4FF),
+                          fontSize: 13,
+                        ),
                       ),
                     ],
                   ),
                 ),
                 IconButton(
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder:
-                            (_) => EditProfileScreen(controller: controller),
-                      ),
-                    );
-                  },
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => EditProfileScreen(controller: controller),
+                    ),
+                  ),
                   icon: const Icon(Icons.edit_outlined, color: Colors.white),
+                  tooltip: 'Edit profile',
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 20),
+          // Account section
           ProfileSection(
             items: [
               ProfileItem(
                 icon: Icons.person_outline,
                 title: 'My Account',
-                subtitle: 'Make changes to your account',
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => EditProfileScreen(controller: controller),
-                    ),
-                  );
-                },
+                subtitle: 'Edit personal information',
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => EditProfileScreen(controller: controller),
+                  ),
+                ),
               ),
               ProfileItem(
                 icon: Icons.medication_outlined,
                 title: 'My Medication',
-                subtitle: 'Manage your medication',
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder:
-                          (_) => EditMedicationScreen(controller: controller),
-                    ),
-                  );
-                },
-              ),
-              ProfileItem(
-                icon: Icons.notifications,
-                title: 'Schedule in 2 Minutes',
-                subtitle: 'Test the real notification scheduler',
-                onTap: () async {
-                  await controller.scheduleTestNotificationInTwoMinutes();
-                  if (context.mounted) {
-                    showSnack(
-                      context,
-                      'Test reminder scheduled for 2 minutes from now',
-                    );
-                  }
-                },
-              ),
-              ProfileItem(
-                icon: Icons.notifications_active,
-                title: 'Show Notification Now',
-                subtitle:
-                    'Compare immediate delivery against scheduled delivery',
-                onTap: () async {
-                  await controller
-                      .showImmediateScheduleComparisonNotification();
-                  if (context.mounted) {
-                    showSnack(context, 'Immediate notification sent');
-                  }
-                },
-              ),
-              ProfileItem(
-                icon: Icons.timer,
-                title: 'Schedule in 15 Seconds',
-                subtitle: 'Quick delivery test for the emulator',
-                onTap: () async {
-                  await controller.scheduleTestNotificationInFifteenSeconds();
-                  if (context.mounted) {
-                    showSnack(
-                      context,
-                      'Test reminder scheduled for 15 seconds from now',
-                    );
-                  }
-                },
-              ),
-              ProfileItem(
-                icon: Icons.info_outline,
-                title: 'Check Notification Permissions',
-                subtitle: 'Debug: notification and alarm permissions',
-                onTap: () async {
-                  final perms = await controller.getNotificationPermissions();
-                  if (context.mounted) {
-                    showSnack(
-                      context,
-                      'Permissions: notification=${perms['notification']}, exactAlarm=${perms['scheduleExactAlarm']}, platformEnabled=${perms['platformNotificationsEnabled']}',
-                    );
-                  }
-                },
-              ),
-              ProfileItem(
-                icon: Icons.info_outline,
-                title: 'Check Pending Notifications',
-                subtitle: 'Debug: See how many notifications are scheduled',
-                onTap: () async {
-                  final count = await controller.getPendingNotificationCount();
-                  if (context.mounted) {
-                    showSnack(context, 'Pending notifications: $count');
-                  }
-                },
-              ),
-              ProfileItem(
-                icon: Icons.visibility,
-                title: 'Check Active Notifications',
-                subtitle: 'Debug: See what is currently displayed',
-                onTap: () async {
-                  final count = await controller.getActiveNotificationCount();
-                  if (context.mounted) {
-                    showSnack(context, 'Active notifications: $count');
-                  }
-                },
+                subtitle: 'Add and manage medications',
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        EditMedicationScreen(controller: controller),
+                  ),
+                ),
               ),
               ProfileItem(
                 icon: Icons.logout,
                 title: 'Log out',
-                subtitle: 'Further secure your account for safety',
+                subtitle: 'Sign out of your account',
                 onTap: () async {
                   final confirm = await showDialog<bool>(
                     context: context,
-                    builder: (ctx) => AlertDialog(
-                      title: const Text('Confirm log out'),
-                      content: const Text('Are you sure you want to log out?'),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.of(ctx).pop(false),
-                          child: const Text('Cancel'),
+                    builder:
+                        (ctx) => AlertDialog(
+                          title: const Text('Confirm log out'),
+                          content: const Text(
+                            'Are you sure you want to log out?',
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.of(ctx).pop(false),
+                              child: const Text('Cancel'),
+                            ),
+                            TextButton(
+                              onPressed: () => Navigator.of(ctx).pop(true),
+                              child: const Text('Log out'),
+                            ),
+                          ],
                         ),
-                        TextButton(
-                          onPressed: () => Navigator.of(ctx).pop(true),
-                          child: const Text('Log out'),
-                        ),
-                      ],
-                    ),
                   );
 
                   if (confirm == true) {
@@ -222,28 +154,28 @@ class ProfileScreen extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
+          // Info section
           ProfileSection(
             items: [
               ProfileItem(
                 icon: Icons.help_outline,
                 title: 'Help & Support',
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const HelpScreen()),
-                  );
-                },
+                subtitle: 'FAQs and contact',
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const HelpScreen()),
+                ),
               ),
               ProfileItem(
                 icon: Icons.favorite_border,
                 title: 'About App',
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const AboutScreen()),
-                  );
-                },
+                subtitle: 'Our mission and version info',
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const AboutScreen()),
+                ),
               ),
             ],
           ),
+          const SizedBox(height: 24),
         ],
       ),
     );
