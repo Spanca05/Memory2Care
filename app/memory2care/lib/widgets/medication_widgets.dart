@@ -208,26 +208,27 @@ class CalendarCard extends StatelessWidget {
 
               Color? background;
               Color textColor = Colors.black54;
-
-              if (due) {
-                if (takenCount == dueMeds.length) {
-                  // All medications taken
-                  background = const Color(0xFF98E8A5);
-                  textColor = Colors.white;
-                } else if (takenCount > 0) {
-                  // Some medications taken
-                  background = const Color(0xFFFFF9C4);
-                  textColor = Colors.black87;
-                } else {
-                  // Due but none taken
-                  background = const Color(0xFFE8F3FF);
-                  textColor = const Color(0xFF3B75C4);
-                }
-              }
+              final isPastDay = date.isBefore(
+                DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day),
+              );
 
               if (today) {
-                background = const Color(0xFFFF5A3D);
+                background = const Color(0xFF5D9CEC);
                 textColor = Colors.white;
+              } else if (due) {
+                if (takenCount == dueMeds.length) {
+                  background = const Color(0xFF98E8A5); // Green — all taken
+                  textColor = Colors.black87;
+                } else if (takenCount > 0) {
+                  background = const Color(0xFFFFF9C4); // Yellow — partial
+                  textColor = Colors.black87;
+                } else if (isPastDay) {
+                  background = const Color(0xFFFF5A3D); // Red — missed
+                  textColor = Colors.white;
+                } else {
+                  background = const Color(0xFFE8F3FF); // Light blue — upcoming
+                  textColor = const Color(0xFF3B75C4);
+                }
               }
 
               return GestureDetector(
@@ -268,12 +269,19 @@ class CalendarCard extends StatelessWidget {
             },
           ),
           const SizedBox(height: 8),
-          const Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              'Tip: Tap colored days to mark medications as taken.',
-              style: TextStyle(fontSize: 12, color: Colors.black45),
-            ),
+          Wrap(
+            spacing: 12,
+            children: [
+              _CalLegendItem(color: Color(0xFF98E8A5), label: 'Taken'),
+              _CalLegendItem(color: Color(0xFFFFF9C4), label: 'Partial', textColor: Colors.black54),
+              _CalLegendItem(color: Color(0xFFFF5A3D), label: 'Missed'),
+              _CalLegendItem(color: Color(0xFF5D9CEC), label: 'Today'),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Tap a day to mark medications as taken.',
+            style: TextStyle(fontSize: 11, color: Colors.black38),
           ),
         ],
       ),
@@ -319,6 +327,34 @@ class MedicationDialog extends StatelessWidget {
           onPressed: () => Navigator.pop(context),
           child: const Text('Done'),
         ),
+      ],
+    );
+  }
+}
+
+class _CalLegendItem extends StatelessWidget {
+  const _CalLegendItem({
+    required this.color,
+    required this.label,
+    this.textColor = Colors.white,
+  });
+
+  final Color color;
+  final String label;
+  final Color textColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 12,
+          height: 12,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 4),
+        Text(label, style: const TextStyle(fontSize: 11, color: Colors.black45)),
       ],
     );
   }

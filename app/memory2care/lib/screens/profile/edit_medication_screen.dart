@@ -7,6 +7,7 @@ import 'package:memory2care/utils/snackbar.dart';
 import 'package:memory2care/utils/validators.dart';
 import 'package:memory2care/widgets/app_scaffold.dart';
 import 'package:memory2care/widgets/medication_widgets.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 class EditMedicationScreen extends StatefulWidget {
   const EditMedicationScreen({super.key, required this.controller});
@@ -63,9 +64,6 @@ class _EditMedicationScreenState extends State<EditMedicationScreen> {
   }
 
   Future<void> _pickEndDate() async {
-    if (_endDateCtrl.text.isEmpty) {
-      return;
-    }
     final initial = DateTime.tryParse(_endDateCtrl.text) ?? DateTime.now();
     final picked = await showDatePicker(
       context: context,
@@ -113,6 +111,48 @@ class _EditMedicationScreenState extends State<EditMedicationScreen> {
     }
   }
 
+  void _showQrDialog(BuildContext context, Medication med) {
+    showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(med.name),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Center(
+              child: SizedBox.square(
+                dimension: 200,
+                child: QrImageView(
+                  data: med.id,
+                  version: QrVersions.auto,
+                  backgroundColor: Colors.white,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              med.dose,
+              style: const TextStyle(color: Colors.black54),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Print and stick this on the medication box.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: Colors.black38),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AppScaffold(
@@ -136,6 +176,32 @@ class _EditMedicationScreenState extends State<EditMedicationScreen> {
             ),
             const SizedBox(height: 10),
             MedicationSummaryCard(plan: widget.controller.medicationPlan),
+            if (widget.controller.medications.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              const Text(
+                'Medication QR Codes',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.black45),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Print or display these codes on your medication boxes.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12, color: Colors.black38),
+              ),
+              const SizedBox(height: 10),
+              ...widget.controller.medications.map(
+                (med) => ListTile(
+                  leading: const Icon(Icons.qr_code, color: Color(0xFF5D9CEC)),
+                  title: Text(med.name),
+                  subtitle: Text(med.dose),
+                  trailing: TextButton(
+                    onPressed: () => _showQrDialog(context, med),
+                    child: const Text('Show QR'),
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: 20),
             const Text(
               'Add New Medication',

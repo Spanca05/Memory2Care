@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:memory2care/controllers/app_controller.dart';
+import 'package:memory2care/screens/ar/ar_scan_screen.dart';
 import 'package:memory2care/screens/main/home_screen.dart';
 import 'package:memory2care/screens/main/profile_screen.dart';
+import 'package:memory2care/screens/main/stats_screen.dart';
 
 class MainShell extends StatefulWidget {
   const MainShell({super.key, required this.controller});
@@ -15,10 +17,14 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _index = 0;
 
+  static const _blue = Color(0xFF5D9CEC);
+  static const _inactive = Colors.black45;
+
   @override
   Widget build(BuildContext context) {
     final screens = [
       HomeScreen(controller: widget.controller),
+      StatsScreen(controller: widget.controller),
       ProfileScreen(controller: widget.controller),
     ];
 
@@ -27,62 +33,121 @@ class _MainShellState extends State<MainShell> {
       builder: (context, _) {
         return Scaffold(
           body: screens[_index],
-          bottomNavigationBar: BottomAppBar(
-            shape: const CircularNotchedRectangle(),
-            notchMargin: 8,
-            child: SizedBox(
-              height: 66,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextButton.icon(
-                      onPressed: () => setState(() => _index = 0),
-                      icon: Icon(
+          bottomNavigationBar: Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black12,
+                  blurRadius: 8,
+                  offset: Offset(0, -2),
+                ),
+              ],
+            ),
+            child: SafeArea(
+              top: false,
+              child: SizedBox(
+                height: 60,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _navItem(
                         Icons.home_outlined,
-                        color:
-                            _index == 0
-                                ? const Color(0xFF5D9CEC)
-                                : Colors.black54,
-                      ),
-                      label: Text(
+                        Icons.home,
                         'Home',
-                        style: TextStyle(
-                          color:
-                              _index == 0
-                                  ? const Color(0xFF5D9CEC)
-                                  : Colors.black54,
-                        ),
+                        0,
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 48),
-                  Expanded(
-                    child: TextButton.icon(
-                      onPressed: () => setState(() => _index = 1),
-                      icon: Icon(
+                    Expanded(
+                      child: _navItem(
+                        Icons.bar_chart,
+                        Icons.bar_chart,
+                        'Stats',
+                        1,
+                      ),
+                    ),
+                    Expanded(child: _qrItem(context)),
+                    Expanded(
+                      child: _navItem(
                         Icons.person_outline,
-                        color:
-                            _index == 1
-                                ? const Color(0xFF5D9CEC)
-                                : Colors.black54,
-                      ),
-                      label: Text(
+                        Icons.person,
                         'Profile',
-                        style: TextStyle(
-                          color:
-                              _index == 1
-                                  ? const Color(0xFF5D9CEC)
-                                  : Colors.black54,
-                        ),
+                        2,
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
         );
       },
+    );
+  }
+
+  Widget _navItem(IconData iconOff, IconData iconOn, String label, int idx) {
+    final active = _index == idx;
+    return TextButton(
+      onPressed: () => setState(() => _index = idx),
+      style: TextButton.styleFrom(
+        padding: EdgeInsets.zero,
+        foregroundColor: active ? _blue : _inactive,
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            active ? iconOn : iconOff,
+            size: 22,
+            color: active ? _blue : _inactive,
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: active ? FontWeight.w700 : FontWeight.w400,
+              color: active ? _blue : _inactive,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _qrItem(BuildContext context) {
+    return TextButton(
+      onPressed: () => Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => ArScanScreen(controller: widget.controller),
+        ),
+      ),
+      style: TextButton.styleFrom(
+        padding: EdgeInsets.zero,
+        foregroundColor: _blue,
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: _blue,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.qr_code_scanner, size: 20, color: Colors.white),
+          ),
+          const SizedBox(height: 2),
+          const Text(
+            'Scan',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: _blue,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
