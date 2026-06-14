@@ -64,9 +64,6 @@ class _EditMedicationScreenState extends State<EditMedicationScreen> {
   }
 
   Future<void> _pickEndDate() async {
-    if (_endDateCtrl.text.isEmpty) {
-      return;
-    }
     final initial = DateTime.tryParse(_endDateCtrl.text) ?? DateTime.now();
     final picked = await showDatePicker(
       context: context,
