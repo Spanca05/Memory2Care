@@ -114,42 +114,40 @@ class _EditMedicationScreenState extends State<EditMedicationScreen> {
   void _showQrDialog(BuildContext context, Medication med) {
     showDialog<void>(
       context: context,
-      builder: (_) => AlertDialog(
-        title: Text(med.name),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Center(
-              child: SizedBox.square(
-                dimension: 200,
-                child: QrImageView(
-                  data: med.id,
-                  version: QrVersions.auto,
-                  backgroundColor: Colors.white,
+      builder:
+          (_) => AlertDialog(
+            title: Text(med.name),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Center(
+                  child: SizedBox.square(
+                    dimension: 200,
+                    child: QrImageView(
+                      data: med.id,
+                      version: QrVersions.auto,
+                      backgroundColor: Colors.white,
+                    ),
+                  ),
                 ),
+                const SizedBox(height: 8),
+                Text(med.dose, style: const TextStyle(color: Colors.black54)),
+                const SizedBox(height: 4),
+                const Text(
+                  'Print and stick this on the medication box.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12, color: Colors.black38),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Close'),
               ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              med.dose,
-              style: const TextStyle(color: Colors.black54),
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'Print and stick this on the medication box.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: Colors.black38),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Close'),
+            ],
           ),
-        ],
-      ),
     );
   }
 
@@ -195,9 +193,54 @@ class _EditMedicationScreenState extends State<EditMedicationScreen> {
                   leading: const Icon(Icons.qr_code, color: Color(0xFF5D9CEC)),
                   title: Text(med.name),
                   subtitle: Text(med.dose),
-                  trailing: TextButton(
-                    onPressed: () => _showQrDialog(context, med),
-                    child: const Text('Show QR'),
+                  trailing: Wrap(
+                    spacing: 6,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      TextButton(
+                        onPressed: () => _showQrDialog(context, med),
+                        child: const Text('Show QR'),
+                      ),
+                      IconButton(
+                        tooltip: 'Remove medication',
+                        onPressed: () async {
+                          final confirm = await showDialog<bool>(
+                            context: context,
+                            builder:
+                                (dialogContext) => AlertDialog(
+                                  title: const Text('Remove medication?'),
+                                  content: Text(
+                                    'This will delete ${med.name} from your medication list.',
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed:
+                                          () => Navigator.of(
+                                            dialogContext,
+                                          ).pop(false),
+                                      child: const Text('Cancel'),
+                                    ),
+                                    TextButton(
+                                      onPressed:
+                                          () => Navigator.of(
+                                            dialogContext,
+                                          ).pop(true),
+                                      child: const Text('Remove'),
+                                    ),
+                                  ],
+                                ),
+                          );
+
+                          if (confirm == true) {
+                            await widget.controller.removeMedication(med.id);
+                          }
+                        },
+                        icon: const Icon(
+                          Icons.delete_outline,
+                          color: Colors.redAccent,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),

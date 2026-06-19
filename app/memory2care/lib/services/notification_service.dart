@@ -13,6 +13,10 @@ class NotificationService {
     'memory2care/timezone',
   );
 
+  bool get _supportsScheduledNotifications =>
+      defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.iOS;
+
   factory NotificationService() {
     return _instance;
   }
@@ -203,6 +207,14 @@ class NotificationService {
         AndroidScheduleMode.exactAllowWhileIdle,
     String? payload,
   }) async {
+    if (!_supportsScheduledNotifications) {
+      developer.log(
+        'Skipping scheduled notification on unsupported platform: $title',
+        name: 'NotificationService',
+      );
+      return;
+    }
+
     final AndroidNotificationDetails androidDetails =
         AndroidNotificationDetails(
           'medication_channel',
@@ -272,6 +284,14 @@ class NotificationService {
         AndroidScheduleMode.inexactAllowWhileIdle,
     String? payload,
   }) async {
+    if (!_supportsScheduledNotifications) {
+      developer.log(
+        'Skipping relative scheduled notification on unsupported platform: $title',
+        name: 'NotificationService',
+      );
+      return;
+    }
+
     final targetTime = tz.TZDateTime.now(tz.local).add(delay);
 
     debugPrint(

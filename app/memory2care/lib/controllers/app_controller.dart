@@ -36,13 +36,20 @@ class AppController extends ChangeNotifier {
       // Notification setup should never block the app bootstrap.
     }
 
-    final local = await LocalStore.instance();
-    _currentUser = local.readStoredUserProfile();
-    _medicationPlan =
-        local.readMedicationPlan() ?? MedicationPlan.defaultPlan();
-    _takenMedications
-      ..clear()
-      ..addAll(local.readTakenMedicationsByDate());
+    try {
+      final local = await LocalStore.instance();
+      await local.reloadActiveAccountState();
+      _currentUser = local.readStoredUserProfile();
+      _medicationPlan =
+          local.readMedicationPlan() ?? MedicationPlan.defaultPlan();
+      _takenMedications
+        ..clear()
+        ..addAll(local.readTakenMedicationsByDate());
+    } catch (_) {
+      _currentUser = null;
+      _medicationPlan = MedicationPlan.defaultPlan();
+      _takenMedications.clear();
+    }
 
     _isInitialized = true;
     notifyListeners();
@@ -67,6 +74,12 @@ class AppController extends ChangeNotifier {
     final local = await LocalStore.instance();
     await local.saveUserProfile(result.user!);
     await local.saveAuthToken(result.token ?? 'local-token');
+    await local.reloadActiveAccountState();
+    _medicationPlan =
+        local.readMedicationPlan() ?? MedicationPlan.defaultPlan();
+    _takenMedications
+      ..clear()
+      ..addAll(local.readTakenMedicationsByDate());
     notifyListeners();
     return result;
   }
@@ -111,6 +124,12 @@ class AppController extends ChangeNotifier {
     final local = await LocalStore.instance();
     await local.saveUserProfile(result.user!);
     await local.saveAuthToken(result.token ?? 'local-token');
+    await local.reloadActiveAccountState();
+    _medicationPlan =
+        local.readMedicationPlan() ?? MedicationPlan.defaultPlan();
+    _takenMedications
+      ..clear()
+      ..addAll(local.readTakenMedicationsByDate());
     notifyListeners();
     return result;
   }
@@ -119,6 +138,8 @@ class AppController extends ChangeNotifier {
     _currentUser = null;
     final local = await LocalStore.instance();
     await local.clearAuthToken();
+    _medicationPlan = MedicationPlan.empty();
+    _takenMedications.clear();
     notifyListeners();
   }
 
@@ -190,6 +211,13 @@ class AppController extends ChangeNotifier {
               .toList(),
     );
     await updateMedicationPlan(updated);
+
+    final local = await LocalStore.instance();
+    _takenMedications.removeWhere((date, takenIds) {
+      takenIds.remove(medicationId);
+      return takenIds.isEmpty;
+    });
+    await local.saveTakenMedicationsByDate(_takenMedications);
   }
 
   bool isDueDate(DateTime date) {

@@ -6,6 +6,7 @@ import 'package:memory2care/models/local_account.dart';
 import 'package:memory2care/models/medication.dart';
 import 'package:memory2care/models/medication_plan.dart';
 import 'package:memory2care/models/user_profile.dart';
+import 'package:memory2care/platform/database_factory_initializer.dart';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
@@ -26,6 +27,7 @@ class LocalStore {
   static const _accountsTable = 'accounts';
   static const _medicationsTable = 'medications';
   static const _takenMedicationsTable = 'taken_medications';
+  static const _dbVersion = 2;
 
   final Database _db;
 
@@ -43,10 +45,11 @@ class LocalStore {
   }
 
   static Future<LocalStore> _create() async {
+    initializeDesktopDatabaseFactory();
     final dbPath = await getDatabasesPath();
     final database = await openDatabase(
       p.join(dbPath, 'memory2care.db'),
-      version: 1,
+      version: _dbVersion,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE $_appStateTable (
@@ -71,6 +74,7 @@ class LocalStore {
         await db.execute('''
           CREATE TABLE $_medicationsTable (
             id TEXT PRIMARY KEY,
+            account_email TEXT NOT NULL,
             name TEXT NOT NULL,
             dose TEXT NOT NULL,
             start_date TEXT NOT NULL,
@@ -85,10 +89,42 @@ class LocalStore {
         await db.execute('''
           CREATE TABLE $_takenMedicationsTable (
             date TEXT NOT NULL,
+            account_email TEXT NOT NULL,
             medication_id TEXT NOT NULL,
-            PRIMARY KEY (date, medication_id)
+            PRIMARY KEY (date, account_email, medication_id)
           )
         ''');
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute(
+            'ALTER TABLE $_medicationsTable ADD COLUMN account_email TEXT',
+          );
+          await db.execute(
+            'ALTER TABLE $_takenMedicationsTable ADD COLUMN account_email TEXT',
+          );
+
+          final activeEmail = await _readMigrationOwner(db);
+          if (activeEmail != null && activeEmail.isNotEmpty) {
+            await db.update(
+              _medicationsTable,
+              {'account_email': activeEmail},
+              where: 'account_email IS NULL OR account_email = ""',
+            );
+            await db.update(
+              _takenMedicationsTable,
+              {'account_email': activeEmail},
+              where: 'account_email IS NULL OR account_email = ""',
+            );
+          }
+
+          await db.execute(
+            'CREATE UNIQUE INDEX IF NOT EXISTS idx_medications_account_id ON $_medicationsTable(account_email, id)',
+          );
+          await db.execute(
+            'CREATE UNIQUE INDEX IF NOT EXISTS idx_taken_medications_account_date_med ON $_takenMedicationsTable(account_email, date, medication_id)',
+          );
+        }
       },
     );
 
@@ -111,13 +147,57 @@ class LocalStore {
 
     _profileCache = await _readProfileFromDb();
     _activeAccountEmailCache = await _readAppState(_activeAccountEmailKey);
+    await _loadActiveAccountData();
+  }
+
+  Future<void> _loadActiveAccountData() async {
+    final activeEmail = readActiveAccountEmail();
+    if (activeEmail == null || activeEmail.isEmpty) {
+      _medicationPlanCache = MedicationPlan.empty();
+      _takenMedsCache.clear();
+      return;
+    }
+
     _medicationPlanCache = MedicationPlan(
-      medications: await _readMedicationsFromDb(),
+      medications: await _readMedicationsFromDb(activeEmail: activeEmail),
     );
 
     _takenMedsCache
       ..clear()
-      ..addAll(await _readTakenMedsFromDb());
+      ..addAll(await _readTakenMedsFromDb(activeEmail: activeEmail));
+  }
+
+  Future<void> reloadActiveAccountState() async {
+    _profileCache = await _readProfileFromDb();
+    _activeAccountEmailCache = await _readAppState(_activeAccountEmailKey);
+    await _loadActiveAccountData();
+  }
+
+  static Future<String?> _readMigrationOwner(Database db) async {
+    final activeRows = await db.query(
+      _appStateTable,
+      columns: ['value'],
+      where: 'key = ?',
+      whereArgs: [_activeAccountEmailKey],
+      limit: 1,
+    );
+    if (activeRows.isNotEmpty) {
+      final activeEmail = activeRows.first['value'] as String?;
+      if (activeEmail != null && activeEmail.isNotEmpty) {
+        return activeEmail.toLowerCase();
+      }
+    }
+
+    final accounts = await db.query(
+      _accountsTable,
+      columns: ['email'],
+      limit: 1,
+    );
+    if (accounts.isEmpty) {
+      return null;
+    }
+
+    return accounts.first['email'] as String?;
   }
 
   Future<void> _migrateFromSharedPreferencesIfNeeded() async {
@@ -204,7 +284,7 @@ class LocalStore {
       for (final medication in plan.medications) {
         batch.insert(
           _medicationsTable,
-          _medicationToRow(medication),
+          _medicationToRow(medication, accountEmail: activeEmail),
           conflictAlgorithm: ConflictAlgorithm.replace,
         );
       }
@@ -219,6 +299,7 @@ class LocalStore {
         for (final medicationId in meds) {
           batch.insert(_takenMedicationsTable, {
             'date': date,
+            'account_email': activeEmail,
             'medication_id': medicationId,
           }, conflictAlgorithm: ConflictAlgorithm.replace);
         }
@@ -280,13 +361,21 @@ class LocalStore {
     return accounts;
   }
 
-  Future<List<Medication>> _readMedicationsFromDb() async {
-    final rows = await _db.query(_medicationsTable);
+  Future<List<Medication>> _readMedicationsFromDb({String? activeEmail}) async {
+    final rows = await _db.query(
+      _medicationsTable,
+      where: activeEmail == null ? null : 'account_email = ?',
+      whereArgs: activeEmail == null ? null : [activeEmail.toLowerCase()],
+    );
     return rows.map((row) => _rowToMedication(row)).toList();
   }
 
-  Future<Map<DateTime, Set<String>>> _readTakenMedsFromDb() async {
-    final rows = await _db.query(_takenMedicationsTable);
+  Future<Map<DateTime, Set<String>>> _readTakenMedsFromDb({String? activeEmail}) async {
+    final rows = await _db.query(
+      _takenMedicationsTable,
+      where: activeEmail == null ? null : 'account_email = ?',
+      whereArgs: activeEmail == null ? null : [activeEmail.toLowerCase()],
+    );
     final result = <DateTime, Set<String>>{};
     for (final row in rows) {
       final date = DateTime.parse(row['date'] as String);
@@ -326,10 +415,19 @@ class LocalStore {
     );
   }
 
-  Map<String, dynamic> _medicationToRow(Medication medication) {
+  Map<String, dynamic> _medicationToRow(
+    Medication medication, {
+    String? accountEmail,
+  }) {
+    final activeEmail = accountEmail ?? readActiveAccountEmail();
+    if (activeEmail == null || activeEmail.isEmpty) {
+      throw StateError('Active account is required to save medication data');
+    }
+
     final map = medication.toMap();
     return {
       'id': map['id'] as String,
+      'account_email': activeEmail.toLowerCase(),
       'name': map['name'] as String,
       'dose': map['dose'] as String,
       'start_date': map['startDate'] as String,
@@ -420,12 +518,21 @@ class LocalStore {
   }
 
   Future<void> saveMedicationPlan(MedicationPlan plan) async {
+    final activeEmail = readActiveAccountEmail();
+    if (activeEmail == null || activeEmail.isEmpty) {
+      throw StateError('Active account is required to save medication data');
+    }
+
     await _db.transaction((txn) async {
-      await txn.delete(_medicationsTable);
+      await txn.delete(
+        _medicationsTable,
+        where: 'account_email = ?',
+        whereArgs: [activeEmail],
+      );
       for (final medication in plan.medications) {
         await txn.insert(
           _medicationsTable,
-          _medicationToRow(medication),
+          _medicationToRow(medication, accountEmail: activeEmail),
           conflictAlgorithm: ConflictAlgorithm.replace,
         );
       }
@@ -455,13 +562,23 @@ class LocalStore {
   Future<void> saveTakenMedicationsByDate(
     Map<DateTime, Set<String>> takenMeds,
   ) async {
+    final activeEmail = readActiveAccountEmail();
+    if (activeEmail == null || activeEmail.isEmpty) {
+      throw StateError('Active account is required to save taken medication data');
+    }
+
     await _db.transaction((txn) async {
-      await txn.delete(_takenMedicationsTable);
+      await txn.delete(
+        _takenMedicationsTable,
+        where: 'account_email = ?',
+        whereArgs: [activeEmail],
+      );
       for (final entry in takenMeds.entries) {
         final date = DateFormat('yyyy-MM-dd').format(entry.key);
         for (final medicationId in entry.value) {
           await txn.insert(_takenMedicationsTable, {
             'date': date,
+            'account_email': activeEmail,
             'medication_id': medicationId,
           }, conflictAlgorithm: ConflictAlgorithm.replace);
         }
@@ -487,6 +604,8 @@ class LocalStore {
   Future<void> clearAuthToken() async {
     _profileCache = null;
     _activeAccountEmailCache = null;
+    _medicationPlanCache = MedicationPlan.empty();
+    _takenMedsCache.clear();
     await _writeAppState(_tokenKey, null);
     await _writeAppState(_profileKey, null);
     await _writeAppState(_activeAccountEmailKey, null);

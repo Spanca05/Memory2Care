@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:memory2care/controllers/app_controller.dart';
@@ -17,6 +19,8 @@ class _ArScanScreenState extends State<ArScanScreen> {
   final MobileScannerController _scannerCtrl = MobileScannerController();
   Medication? _detected;
   bool _processing = false;
+
+  bool get _scannerSupported => Platform.isAndroid || Platform.isIOS;
 
   @override
   void dispose() {
@@ -56,6 +60,30 @@ class _ArScanScreenState extends State<ArScanScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_scannerSupported) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Scan Medication'),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                Icon(Icons.qr_code_scanner, size: 56),
+                SizedBox(height: 16),
+                Text(
+                  'Medication scanning is available on mobile devices only.',
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
@@ -65,7 +93,11 @@ class _ArScanScreenState extends State<ArScanScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.flash_on),
-            onPressed: () => _scannerCtrl.toggleTorch(),
+            onPressed: () {
+              if (_scannerSupported) {
+                _scannerCtrl.toggleTorch();
+              }
+            },
           ),
         ],
       ),
